@@ -1,0 +1,120 @@
+services:
+  template-bootstrap:
+    image: postgres:16-alpine
+    container_name: template-bootstrap
+    env_file:
+      - .env
+    depends_on:
+      authentik-bootstrap:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+
+        until PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" pg_isready -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}"; do
+          sleep 2
+        done
+
+        until PGPASSWORD="${TEMPLATE_AUTH_DB_PASSWORD}" pg_isready -h "${TEMPLATE_AUTH_DB_HOST}" -p "${TEMPLATE_AUTH_DB_PORT}" -U "${TEMPLATE_AUTH_DB_USER}" -d "${TEMPLATE_AUTH_DB_NAME}"; do
+          sleep 2
+        done
+
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" <<'SQL'
+        CREATE TABLE IF NOT EXISTS module_bootstrap_execution (
+            script_key TEXT PRIMARY KEY,
+            executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        SQL
+
+        entities_datamodel_applied=$(PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -tA -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" -c "SELECT 1 FROM module_bootstrap_execution WHERE script_key = 'template_datamodel_v1' LIMIT 1;")
+        if [ "$$entities_datamodel_applied" != "1" ]; then
+          PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" -f /module/datamodel.sql
+          PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" -c "INSERT INTO module_bootstrap_execution (script_key) VALUES ('template_datamodel_v1') ON CONFLICT (script_key) DO NOTHING;"
+        fi
+
+        PGPASSWORD="${TEMPLATE_AUTH_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_AUTH_DB_HOST}" -p "${TEMPLATE_AUTH_DB_PORT}" -U "${TEMPLATE_AUTH_DB_USER}" -d "${TEMPLATE_AUTH_DB_NAME}" <<'SQL'
+        CREATE TABLE IF NOT EXISTS module_bootstrap_execution (
+            script_key TEXT PRIMARY KEY,
+            executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        SQL
+
+        authz_applied=$(PGPASSWORD="${TEMPLATE_AUTH_DB_PASSWORD}" psql -tA -h "${TEMPLATE_AUTH_DB_HOST}" -p "${TEMPLATE_AUTH_DB_PORT}" -U "${TEMPLATE_AUTH_DB_USER}" -d "${TEMPLATE_AUTH_DB_NAME}" -c "SELECT 1 FROM module_bootstrap_execution WHERE script_key = 'template_authorization_v1' LIMIT 1;")
+        if [ "$$authz_applied" != "1" ]; then
+          PGPASSWORD="${TEMPLATE_AUTH_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_AUTH_DB_HOST}" -p "${TEMPLATE_AUTH_DB_PORT}" -U "${TEMPLATE_AUTH_DB_USER}" -d "${TEMPLATE_AUTH_DB_NAME}" -f /module/authorization.sql
+          PGPASSWORD="${TEMPLATE_AUTH_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_AUTH_DB_HOST}" -p "${TEMPLATE_AUTH_DB_PORT}" -U "${TEMPLATE_AUTH_DB_USER}" -d "${TEMPLATE_AUTH_DB_NAME}" -c "INSERT INTO module_bootstrap_execution (script_key) VALUES ('template_authorization_v1') ON CONFLICT (script_key) DO NOTHING;"
+        fi
+    volumes:
+      - ./database/initdb/datamodel.sql:/module/datamodel.sql:ro
+      - ./database/initdb/authorization.sql:/module/authorization.sql:ro
+    restart: "no"
+    networks:
+      - ideable_network
+
+  template-database:
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    container_name: template-database
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${TEMPLATE_ENTITIES_DB_NAME}
+      - POSTGRES_USER=${TEMPLATE_ENTITIES_DB_USER}
+      - POSTGRES_PASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+    ports:
+      - "${TEMPLATE_POSTGRES_PORT:-5434}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPLATE_ENTITIES_DB_USER} -d ${TEMPLATE_ENTITIES_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ideable_network
+
+  template-backend:
+    image: template/backend:latest
+    container_name: template-backend
+    env_file:
+      - .env
+    ports:
+      - "${TEMPLATE_BACKEND_PORT:-8002}:8002"
+    environment:
+      - DATABASE_URL=postgresql://${TEMPLATE_ENTITIES_DB_USER}:${TEMPLATE_ENTITIES_DB_PASSWORD}@${TEMPLATE_ENTITIES_DB_HOST}:${TEMPLATE_ENTITIES_DB_PORT}/${TEMPLATE_ENTITIES_DB_NAME}
+      - AUTHENTIK_JWKS_URL=${AUTHENTIK_JWKS_URL}
+      - HOSTAPP_API_URL=${HOSTAPP_API_URL}
+    depends_on:
+      template-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - ideable_network
+
+  template-frontend:
+    image: template/frontend:latest
+    container_name: template-frontend
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "${TEMPLATE_FRONTEND_PORT:-3001}:80"
+    volumes:
+      - ./config/menu_definition.json:/usr/share/nginx/html/menu_definition.json:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.template-frontend-router.rule=PathPrefix(`/remotes/template`)"
+      - "traefik.http.routers.template-frontend-router.entrypoints=websecure"
+      - "traefik.http.routers.template-frontend-router.tls=true"
+      - "traefik.http.routers.template-frontend-router.tls.certresolver=le"
+      - "traefik.http.services.template-frontend-service.loadbalancer.server.port=80"
+      # Strip /remotes/template prefix when forwarding to the container
+      - "traefik.http.middlewares.template-stripprefix.stripPrefix.prefixes=/remotes/template"
+      - "traefik.http.routers.template-frontend-router.middlewares=template-stripprefix"
+    depends_on:
+      - template-backend
+    networks:
+      - ideable_network
+
+networks:
+  ideable_network:
+    external: true

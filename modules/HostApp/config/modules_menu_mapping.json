@@ -1,0 +1,21 @@
+{
+  "menu_mapping": [
+    {
+      "menu_item_code": "TEMPLATE",
+      "menu_item_name": "Template",
+      "icon": "Package",
+      "module": "template",
+      "module_menu_item_code_path": "TEMPLATE",
+      "sub_items": [
+        {
+          "menu_item_code": "ITEMS",
+          "menu_item_name": "Items",
+          "icon": "List",
+          "module": "template",
+          "module_menu_item_code_path": "TEMPLATE.ITEMS",
+          "sub_items": []
+        }
+      ]
+    }
+  ]
+}
