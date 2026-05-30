@@ -1,0 +1,30 @@
+{
+  "menu_mapping": [
+    {
+      "menu_item_code": "TEMPLATE",
+      "menu_item_name": "Template",
+      "icon": "Package",
+      "module": "template",
+      "module_menu_item_code_path": "TEMPLATE",
+      "sub_items": [
+        {
+          "menu_item_code": "ITEMS",
+          "menu_item_name": "Items",
+          "icon": "List",
+          "routing": "/items",
+          "module": "template",
+          "module_menu_item_code_path": "TEMPLATE.ITEMS",
+          "sub_items": []
+        }
+      ]
+    },
+    {
+      "menu_item_code": "FAKE_ADMIN_MENU",
+      "menu_item_name": "Fake Admin Example",
+      "icon": "Shield",
+      "module": "template",
+      "module_menu_item_code_path": "ADMIN.FAKE_ADMIN_MENU",
+      "sub_items": []
+    }
+  ]
+}

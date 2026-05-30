@@ -1,0 +1,1 @@
+**MANDATORY**: use the file rules/general-guidelines.md as general guidelines for all agents

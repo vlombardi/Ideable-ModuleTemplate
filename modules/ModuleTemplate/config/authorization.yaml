@@ -1,0 +1,69 @@
+# ModuleTemplate authorization contract
+#
+# Internal logic:
+# - This file is the authoritative ModuleTemplate authorization specification.
+# - Authentik is the source of truth for identity and authorization.
+# - The module bootstrap process consumes this file directly as the module
+#   authorization contract.
+# - The contract is idempotent: running it multiple times must not duplicate
+#   identities, roles, permissions, or mappings.
+# - This file is intentionally scoped to the Items entity and its related
+#   authorization data.
+# - HostApp owns only the initial application-wide authorization bootstrap.
+#
+users: # A list of Users each with its metadata and associated Profiles  
+  - username: template_admin
+    email: template_admin@ideable.tech
+    full_name: Template Admin
+    profiles: # the list of Profiles associated with the user
+    - template_admin
+  - ext_user: sadmin   # NOTE: The ext_user keyword indicates that the user referenced here is defined in another Module (in this case, in HostApp).
+                       #       This is a special way to associate profiles defined here to a user that is defined esternally.
+                       #       Do not define here other users pecific data like full_name, email, etc. (they whould be ignored to avoid conflicts/overwritings)
+                       #       The external Module that defines the user must be declared in the module's dependencies.  
+    profiles: # the list of Profiles associated with the user
+    - template_admin
+
+profiles: # A list of Profiles each with its metadata and associated Roles
+  - profile: template_admin
+    description: ModuleTemplate administrators
+    roles: # the list of Roles associated with the Profile
+      - template_items_manager
+  - profile: template_reader
+    description: ModuleTemplate read-only users
+    roles: # the list of Roles associated with the Profile
+      - template_items_reader
+  - ext_profile: admin # NOTE: The ext_profile keyword indicates that the profile referenced here is defined in another Module (in this case, in HostApp).
+                       #       This is a special way to associate roles defined here to a profile that is defined esternally.
+                       #       Do not define here other profiles pecific data like description, etc. (they whould be ignored to avoid conflicts/overwritings)
+                       #       The external Module that defines the profile must be declared in the module's dependencies.
+    roles: # the list of Roles associated with the Profile
+      - template_items_manager
+roles: # A list of Roles each with its metadata and associated Permissions
+  - ext_role: guest # NOTE: The ext_role keyword indicates that the role referenced here is defined in another Module (in this case, in HostApp).
+                    #       This is a special way to associate permissions defined here to a role that is defined esternally.
+                    #       Do not define here other roles pecific data like description, etc. (they whould be ignored to avoid conflicts/overwritings)
+                    #       The external Module that defines the role must be declared in the module's dependencies.
+    permissions: # the list of Permissions associated with the Role
+      - items:view
+      - items:menu_access
+
+  - role: template_items_manager
+    description: CRUD access to Template Items
+    permissions: # the list of Permissions associated with the Role
+      - items:view
+      - items:edit
+      - items:menu_access
+  - role: template_items_reader
+    description: Read access to Template Items
+    permissions: # the list of Permissions associated with the Role
+      - items:view
+      - items:menu_access
+permissions: # A list of Permissions each with its metadata
+  - name: items:view
+    description: View template items
+  - name: items:edit
+    description: Edit template items
+  - name: items:menu_access
+    description: Access items menu
+

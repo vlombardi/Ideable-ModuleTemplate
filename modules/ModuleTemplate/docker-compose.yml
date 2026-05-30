@@ -1,0 +1,143 @@
+services:
+
+  ############################
+  #   template - Bootstrap   #
+  ############################
+  template-bootstrap:
+    image: postgres:16-alpine
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.bootstrap
+    environment:
+      - TEMPLATE_ENTITIES_DB_HOST=${TEMPLATE_ENTITIES_DB_HOST}
+      - TEMPLATE_ENTITIES_DB_PORT=${TEMPLATE_ENTITIES_DB_PORT}
+      - TEMPLATE_ENTITIES_DB_NAME=${TEMPLATE_ENTITIES_DB_NAME}
+      - TEMPLATE_ENTITIES_DB_USER=${TEMPLATE_ENTITIES_DB_USER}
+      - TEMPLATE_ENTITIES_DB_PASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+      - PGPASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+    depends_on:
+      authentik-bootstrap:
+        condition: service_completed_successfully
+      hostapp-db-bootstrap:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+
+        until pg_isready -h "template-database" -p "5432" -U "template_user" -d "template_db"; do
+          sleep 2
+        done
+
+        PGPASSWORD="template_password" psql -v ON_ERROR_STOP=1 -h "template-database" -p "5432" -U "template_user" -d "template_db" <<'SQL'
+        CREATE TABLE IF NOT EXISTS module_bootstrap_execution (
+            script_key TEXT PRIMARY KEY,
+            executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        SQL
+
+        entities_datamodel_applied=$(PGPASSWORD="template_password" psql -tA -h "template-database" -p "5432" -U "template_user" -d "template_db" -c "SELECT 1 FROM module_bootstrap_execution WHERE script_key = 'template_datamodel_v1' LIMIT 1;")
+        if [ "$$entities_datamodel_applied" != "1" ]; then
+          PGPASSWORD="template_password" psql -v ON_ERROR_STOP=1 -h "template-database" -p "5432" -U "template_user" -d "template_db" -f /module/datamodel.sql
+          PGPASSWORD="template_password" psql -v ON_ERROR_STOP=1 -h "template-database" -p "5432" -U "template_user" -d "template_db" -c "INSERT INTO module_bootstrap_execution (script_key) VALUES ('template_datamodel_v1') ON CONFLICT (script_key) DO NOTHING;"
+        fi
+
+        seed_applied=$(PGPASSWORD="template_password" psql -tA -h "template-database" -p "5432" -U "template_user" -d "template_db" -c "SELECT 1 FROM module_bootstrap_execution WHERE script_key = 'sra_seed_v1' LIMIT 1;")
+        if [ "$$seed_applied" != "1" ]; then
+          PGPASSWORD="template_password" psql -v ON_ERROR_STOP=1 -h "template-database" -p "5432" -U "template_user" -d "template_db" -f /module/seed.sql
+          PGPASSWORD="template_password" psql -v ON_ERROR_STOP=1 -h "template-database" -p "5432" -U "template_user" -d "template_db" -c "INSERT INTO module_bootstrap_execution (script_key) VALUES ('sra_seed_v1') ON CONFLICT (script_key) DO NOTHING;"
+        fi
+
+        if [ ! -s /module/authorization.yaml ]; then
+          echo "authorization.yaml is missing or empty" >&2
+          exit 1
+        fi
+
+        echo "authorization.yaml loaded from module-level config"
+    volumes:
+      - ./database/initdb/datamodel.sql:/module/datamodel.sql:ro
+      - ./config/authorization.yaml:/module/authorization.yaml:ro
+      - ./database/initdb/seed.sql:/module/seed.sql:ro
+    restart: "no"
+    networks:
+      - ideable_network
+
+  ############################
+  #   template - Database    #
+  ############################
+  template-database:
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.database
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${TEMPLATE_ENTITIES_DB_NAME}
+      - POSTGRES_USER=${TEMPLATE_ENTITIES_DB_USER}
+      - POSTGRES_PASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+    ports:
+      - "${TEMPLATE_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - template_database_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPLATE_ENTITIES_DB_USER} -d ${TEMPLATE_ENTITIES_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ideable_network
+
+  ############################
+  #   template - Backend     #
+  ############################
+  template-backend:
+    image: ${APP_SLUG}.${MODULE_SLUG}.backend:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.backend
+    env_file:
+      - .env
+    ports:
+      - "${TEMPLATE_BACKEND_PORT:-8002}:8002"
+    environment:
+      - DATABASE_URL=postgresql://${TEMPLATE_ENTITIES_DB_USER}:${TEMPLATE_ENTITIES_DB_PASSWORD}@${TEMPLATE_ENTITIES_DB_HOST}:${TEMPLATE_ENTITIES_DB_PORT}/${TEMPLATE_ENTITIES_DB_NAME}
+      - AUTHENTIK_JWKS_URL=${AUTHENTIK_JWKS_URL}
+      - HOSTAPP_API_URL=${HOSTAPP_API_URL}
+    depends_on:
+      template-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - ideable_network
+
+  ############################
+  #   template - Frontend    #
+  ############################
+  template-frontend:
+    image: ${APP_SLUG}.${MODULE_SLUG}.frontend:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.frontend
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "${TEMPLATE_FRONTEND_PORT:-3001}:80"
+    volumes:
+      - ./config/menu_definition.json:/usr/share/nginx/html/menu_definition.json:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.template-frontend-router.rule=PathPrefix(`/remotes/template`)"
+      - "traefik.http.routers.template-frontend-router.entrypoints=websecure"
+      - "traefik.http.routers.template-frontend-router.tls=true"
+      - "traefik.http.routers.template-frontend-router.tls.certresolver=le"
+      - "traefik.http.services.template-frontend-service.loadbalancer.server.port=80"
+      # Strip /remotes/template prefix when forwarding to the container
+      - "traefik.http.middlewares.template-stripprefix.stripPrefix.prefixes=/remotes/template"
+      - "traefik.http.routers.template-frontend-router.middlewares=template-stripprefix"
+    depends_on:
+      - template-backend
+    networks:
+      - ideable_network
+
+networks:
+  ideable_network:
+    driver: bridge
+
+volumes:
+  template_database_data:
+    name: ${APP_SLUG}_${MODULE_SLUG}_database_data

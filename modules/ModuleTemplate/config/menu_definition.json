@@ -1,0 +1,20 @@
+{
+  "menu_definition": [
+    {
+      "menu_item_code": "TEMPLATE",
+      "menu_item_name": "Template",
+      "icon": "Package",
+      "is_collapsible": true,
+      "authorization_claim": "TemplateMainMenu",
+      "sub_items": [
+        {
+          "menu_item_code": "ITEMS",
+          "menu_item_name": "Items",
+          "icon": "List",
+          "routing": "/items",
+          "sub_items": []
+        }
+      ]
+    }
+  ]
+}
