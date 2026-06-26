@@ -1,0 +1,164 @@
+# HostApp bootstrap authorization configuration
+
+users:
+  - username: sadmin
+    email: sadmin@ideable.tech
+    full_name: Super Admin
+    profiles:
+      - admin
+      - security_officer
+      - reader
+    superadmin: true
+  - username: guest
+    email: guest@ideable.tech
+    full_name: Guest User
+    profiles:
+      - reader
+    superadmin: false
+profiles:
+  - profile: admin
+    description: Administrators
+    roles:
+      - authorization_full_editor
+  - profile: security_officer
+    description: Security officers
+    roles:
+      - user_profiler
+      - authorization_viewer    
+  - profile: reader
+    description: Read-only users
+    roles:
+      - authorization_viewer    
+roles:
+  - role: authorization_full_editor
+    description: Full HostApp administration access
+    permissions:
+      - access_logs:menu_access
+      - access_logs:view
+      - audit_trail:view
+      - tenants:view
+      - tenants:edit
+      - tenants:menu_access
+      - home:menu_access
+      - permission_to_role_assignments:edit
+      - permission_to_role_assignments:view
+      - permissions:menu_access
+      - permissions:edit
+      - profiles:menu_access
+      - permissions:view
+      - profile_to_user_assignments:edit
+      - profile_to_user_assignments:view
+      - profiles:edit
+      - profiles:view
+      - role_to_profile_assignments:edit
+      - role_to_profile_assignments:view
+      - roles:edit
+      - roles:menu_access
+      - roles:view
+      - users:edit
+      - users:menu_access
+      - users:password_change
+      - users:view
+      - users_and_permissions:menu_access    
+  - role: authorization_viewer
+    description: Read-only HostApp visibility access
+    permissions:
+      - access_logs:menu_access
+      - access_logs:view
+      - audit_trail:view
+      - tenants:menu_access
+      - tenants:view
+      - home:menu_access
+      - permission_to_role_assignments:view
+      - permissions:menu_access
+      - permissions:view
+      - profile_to_user_assignments:view
+      - profiles:menu_access
+      - profiles:view
+      - roles:menu_access
+      - roles:view
+      - role_to_profile_assignments:view
+      - users_and_permissions:menu_access
+      - users:menu_access
+      - users:view
+  - role: user_profiler
+    description: Security officer access to HostApp administration areas
+    permissions:
+      - access_logs:menu_access
+      - access_logs:view
+      - tenants:menu_access
+      - tenants:view
+      - home:menu_access
+      - permission_to_role_assignments:view
+      - permissions:menu_access
+      - permissions:view
+      - profile_to_user_assignments:edit
+      - profile_to_user_assignments:view
+      - profiles:menu_access
+      - profiles:view
+      - role_to_profile_assignments:view
+      - roles:menu_access
+      - roles:view
+      - users_and_permissions:menu_access
+      - users:menu_access
+      - users:password_change  
+      - users:view
+  - role: guest
+    description: HostApp login, no access to administration areas
+    permissions:
+      - home:menu_access
+permissions:
+  - name: users:view
+    description: View users (read-only)
+  - name: users:edit
+    description: Edit users (create, update, delete)
+  - name: profiles:view
+    description: View profiles (read-only)
+  - name: profiles:edit
+    description: Edit profiles (create, update, delete)
+  - name: roles:view  
+    description: View roles (read-only)
+  - name: roles:edit
+    description: Edit roles (create, update, delete)
+  - name: permissions:edit
+    description: Edit permissions (create, update, delete)
+  - name: permissions:view
+    description: View permissions (read-only)
+  - name: profile_to_user_assignments:view
+    description: View profile to user assignments (read-only)
+  - name: profile_to_user_assignments:edit
+    description: Assign-unassign profile to user
+  - name: role_to_profile_assignments:view
+    description: View role to profile assignments (read-only)
+  - name: role_to_profile_assignments:edit
+    description: Assign-unassign role to profile
+  - name: permission_to_role_assignments:view
+    description: View permission to role assignments (read-only)
+  - name: permission_to_role_assignments:edit
+    description: Assign-unassign permission to role
+  - name: access_logs:view
+    description: View access logs
+  - name: users:password_change
+    description: Change user password
+  - name: home:menu_access
+    description: Access home menu
+  - name: users_and_permissions:menu_access
+    description: Access users and permissions menu
+  - name: users:menu_access
+    description: Access users menu
+  - name: profiles:menu_access
+    description: Access profiles menu
+  - name: roles:menu_access
+    description: Access roles menu
+  - name: permissions:menu_access
+    description: Access permissions menu
+  - name: tenants:view
+    description: View tenants (read-only)
+  - name: tenants:edit
+    description: Edit tenants (create, update, delete)
+  - name: tenants:menu_access
+    description: Access tenants menu
+  - name: access_logs:menu_access
+    description: Access access logs menu
+  - name: audit_trail:view
+    description: View the full audit trail history for all HostApp entities

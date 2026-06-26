@@ -1,0 +1,18 @@
+---
+description: Core Ideable project rules — applied to every file in the repo
+alwaysApply: true
+---
+
+Read `rules/general-guidelines.md` completely before taking any action in this repository. It is mandatory and cannot be overridden by any other instruction.
+
+Key hard constraints (do not skip reading the source):
+- No `build:` sections in any `docker-compose.yml` — images are pre-built, referenced by `image:` only.
+- `Dockerfile` files live only in `<SUB_MODULE>/SOURCES/`. Never in `DIST/`, `deployment_root/`, or module root.
+- Volume mounts must only reference paths inside `deployment_root/`, never `SOURCES/` or `DIST/`.
+- Deployed compose files use `env_file: - ../../.env`; source compose files use `env_file: - .env`.
+- Test reports go to `TEST_REPORTS/<YYYY-MM-DD-HH-MM-SS>-<MODULE>/test-report.md` at project root.
+- `SPECS/dependencies.md` is the single source of truth for versions — update it when any dependency changes.
+- Decision authority belongs to the human developer — stop and ask on any ambiguity.
+- Project rules override all AI suggestions. Rules are mandatory; AI output is advisory.
+
+Before coding anything in a module or sub-module, read that module's `SPECS/base-specs.md` and every file it references.

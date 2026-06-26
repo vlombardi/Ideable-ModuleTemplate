@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  .template-scope,
+  .template-scope[data-lf='hostapp'] {
+    --template-background: var(--background, 0 0% 100%);
+    --template-foreground: var(--foreground, 222.2 84% 4.9%);
+    --template-card: var(--card, 0 0% 100%);
+    --template-card-foreground: var(--card-foreground, 222.2 84% 4.9%);
+    --template-popover: var(--popover, 0 0% 100%);
+    --template-popover-foreground: var(--popover-foreground, 222.2 84% 4.9%);
+    --template-primary: var(--primary, 222.2 47.4% 11.2%);
+    --template-primary-foreground: var(--primary-foreground, 210 40% 98%);
+    --template-secondary: var(--secondary, 210 40% 96.1%);
+    --template-secondary-foreground: var(--secondary-foreground, 222.2 47.4% 11.2%);
+    --template-muted: var(--muted, 210 40% 96.1%);
+    --template-muted-foreground: var(--muted-foreground, 215.4 16.3% 46.9%);
+    --template-accent: var(--accent, 210 40% 96.1%);
+    --template-accent-foreground: var(--accent-foreground, 222.2 47.4% 11.2%);
+    --template-destructive: var(--destructive, 0 84.2% 60.2%);
+    --template-destructive-foreground: var(--destructive-foreground, 210 40% 98%);
+    --template-border: var(--border, 214.3 31.8% 91.4%);
+    --template-input: var(--input, 214.3 31.8% 91.4%);
+    --template-ring: var(--ring, 222.2 84% 4.9%);
+    --template-radius: var(--radius, 0.5rem);
+  }
+
+  .template-scope[data-lf='module'] {
+    --template-background: var(--template-module-background, 0 0% 100%);
+    --template-foreground: var(--template-module-foreground, 222.2 84% 4.9%);
+    --template-card: var(--template-module-card, 0 0% 100%);
+    --template-card-foreground: var(--template-module-card-foreground, 222.2 84% 4.9%);
+    --template-popover: var(--template-module-popover, 0 0% 100%);
+    --template-popover-foreground: var(--template-module-popover-foreground, 222.2 84% 4.9%);
+    --template-primary: var(--template-module-primary, 222.2 47.4% 11.2%);
+    --template-primary-foreground: var(--template-module-primary-foreground, 210 40% 98%);
+    --template-secondary: var(--template-module-secondary, 210 40% 96.1%);
+    --template-secondary-foreground: var(--template-module-secondary-foreground, 222.2 47.4% 11.2%);
+    --template-muted: var(--template-module-muted, 210 40% 96.1%);
+    --template-muted-foreground: var(--template-module-muted-foreground, 215.4 16.3% 46.9%);
+    --template-accent: var(--template-module-accent, 210 40% 96.1%);
+    --template-accent-foreground: var(--template-module-accent-foreground, 222.2 47.4% 11.2%);
+    --template-destructive: var(--template-module-destructive, 0 84.2% 60.2%);
+    --template-destructive-foreground: var(--template-module-destructive-foreground, 210 40% 98%);
+    --template-border: var(--template-module-border, 214.3 31.8% 91.4%);
+    --template-input: var(--template-module-input, 214.3 31.8% 91.4%);
+    --template-ring: var(--template-module-ring, 222.2 84% 4.9%);
+    --template-radius: var(--template-module-radius, 0.5rem);
+  }
+
+  .template-scope {
+    @apply template-bg-background template-text-foreground;
+  }
+}

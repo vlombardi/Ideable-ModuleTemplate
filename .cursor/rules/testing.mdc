@@ -1,0 +1,14 @@
+---
+description: Testing rules — automatically applied when editing test files
+globs: ["**/TESTS/**", "**/TESTS/"]
+alwaysApply: false
+---
+
+You are working on tests. Read `rules/testing-guidelines.md` before proceeding.
+
+Key constraints:
+- Test reports must be saved to `TEST_REPORTS/<YYYY-MM-DD-HH-MM-SS>-<MODULE>/test-report.md` at the project root. Never inside `TESTS/`.
+- Module-level tests: `modules/<MODULE>/TESTS/`
+- Sub-module-level tests: `modules/<MODULE>/<SUB_MODULE>/TESTS/`
+- Python: use `pytest` or `unittest`. JavaScript/TypeScript: use `jest`, `vitest`, or `cypress` (E2E).
+- Tests must be independent and not rely on execution order.

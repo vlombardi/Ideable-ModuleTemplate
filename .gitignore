@@ -1,0 +1,212 @@
+# Ideable Project .gitignore
+# Based on general-guidelines.md Version Control section
+
+# ================================
+# Agent-Generated Recap Files
+# ================================
+# Summary and guide files created by Antigravity agent
+AGENT_RECAP/
+
+
+# ================================
+# Agent-Skill repositories
+# ================================
+# Embedded git repositories for agent skills
+.agent/checked-out/
+
+
+# ================================
+# Build Artifacts
+# ================================
+# DIST folders contain build/deployment artifacts
+**/DIST/**
+**/dist/
+**/build/
+
+# ================================
+# Environment & Secrets
+# ================================
+# Secret files — do not commit
+.env
+.env.local
+.env.*.local
+.env.secrets
+project.env
+project.env.secrets
+
+# Keep config and example files
+!.env.config
+!.env.config.example
+!.env.secrets.example
+!.env.example
+!.env.*.example
+!.env.*.template
+
+# ================================
+# Dependencies
+# ================================
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Java/Maven
+target/
+dependency-reduced-pom.xml
+*.jar
+!**/src/main/resources/**/*.jar
+*.war
+*.ear
+*.class
+
+# ================================
+# Docker & Data
+# ================================
+# Docker volumes and data directories
+data/
+deployment_root/data/
+**/data/
+*.log
+
+# Docker override files
+docker-compose.override.yml
+
+# Authentik blueprint build virtualenv artifacts
+modules/HostApp/authentik/.build-venv/
+
+# ================================
+# IDE & Editor Files
+# ================================
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ================================
+# OS Files
+# ================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ================================
+# Test Reports
+# ================================
+# Test reports (unless specifically archived)
+*-test-report.md
+test-results/
+coverage/
+modules/ModuleTemplate/frontend/TESTS/playwright/playwright-report/
+modules/ModuleTemplate/frontend/TESTS/playwright/test-results/
+modules/ModuleTemplate/frontend/TESTS/playwright/blob-report/
+
+# ================================
+# Temporary Files
+# ================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# ================================
+# Module-Specific Ignores
+# ================================
+
+# Flink
+**/flink_jobs/**/target/
+**/flink_jobs/**/dependency-reduced-pom.xml
+
+# TimescaleDB
+**/timescale/data/
+
+# Redis
+dump.rdb
+
+# ================================
+# Logs
+# ================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ================================
+# Security & Certificates
+# ================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ================================
+# Keep Important Files
+# ================================
+# Keep README files in DIST and TESTS folders
+!**/DIST/README.md
+!**/TESTS/README.md
+
+# Keep documentation
+!*.md
+
+# Keep configuration examples
+!*.example
+!*.template
+deployment_root/
+
+# Temporary files
+tmp

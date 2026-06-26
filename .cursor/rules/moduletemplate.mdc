@@ -1,0 +1,22 @@
+---
+description: ModuleTemplate framework rules — automatically applied when editing ModuleTemplate files
+globs: ["modules/ModuleTemplate/**"]
+alwaysApply: false
+---
+
+You are working inside the ModuleTemplate module (the Ideable framework reference implementation). Before taking any action:
+
+1. Read `modules/ModuleTemplate/SPECS/ideable-framework-specs/base-specs.md` and follow every file it references.
+2. Read the sub-module `SPECS/ideable-framework-specs/base-specs.md` for the specific sub-module you are editing.
+3. Read `modules/ModuleTemplate/<SUB_MODULE>/SPECS/general_bug_avoider.md` before writing or changing code.
+4. Read the relevant shared framework bug-avoider before the module-specific one:
+   - Backend: `modules/ModuleTemplate/backend/SPECS/ideable-framework-specs/shared-backend-bug-avoider.md`
+   - Frontend: `modules/ModuleTemplate/frontend/SPECS/ideable-framework-specs/shared-frontend-bug-avoider.md`
+
+Sub-module quick reference:
+- Backend: `modules/ModuleTemplate/backend/SPECS/ideable-framework-specs/base-specs.md`
+- Frontend: `modules/ModuleTemplate/frontend/SPECS/ideable-framework-specs/base_specs.md`
+- Database: `modules/ModuleTemplate/database/SPECS/ideable-framework-specs/base-specs.md`
+- Module integration: `modules/ModuleTemplate/SPECS/ideable-framework-specs/module-integration-specs.md`
+- Audit trail: `modules/ModuleTemplate/SPECS/ideable-framework-specs/audit-trail-specs.md`
+- Auth: `modules/ModuleTemplate/SPECS/ideable-framework-specs/auth-specs.md`

@@ -1,0 +1,5 @@
+{
+  "env": {
+    "OPENROUTER_EXTRA_HEADERS": "{\"X-Session-Id\": \"Ideable\"}"
+  }
+}
