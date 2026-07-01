@@ -1,0 +1,20 @@
+---
+description: HostApp module rules — automatically applied when editing HostApp files
+globs: ["modules/HostApp/**"]
+alwaysApply: false
+---
+
+You are working inside the HostApp module. Before taking any action:
+
+1. Read `modules/HostApp/SPECS/base-specs.md` and follow every file it references.
+2. Read the sub-module `SPECS/base_specs.md` for the specific sub-module you are editing.
+3. Read `modules/HostApp/<SUB_MODULE>/SPECS/general_bug_avoider.md` before writing or changing code.
+4. Read `modules/ModuleTemplate/backend/SPECS/ideable-framework-specs/shared-backend-bug-avoider.md` (backend work) or `modules/ModuleTemplate/frontend/SPECS/ideable-framework-specs/shared-frontend-bug-avoider.md` (frontend work) — these contain framework-level rules that apply to HostApp too.
+
+Sub-module quick reference:
+- Backend: `modules/HostApp/backend/SPECS/base_specs.md`
+- Frontend: `modules/HostApp/frontend/SPECS/base_specs.md`
+- Database: `modules/HostApp/database/SPECS/base-specs.md`
+- Auth (Authentik): `modules/HostApp/authentik/SPECS/base-specs.md`
+- Edge routing (Traefik): `modules/HostApp/traefik/SPECS/base-specs.md`
+- Auth contracts: `modules/HostApp/SPECS/auth-specs.md` (load for auth-related tasks)

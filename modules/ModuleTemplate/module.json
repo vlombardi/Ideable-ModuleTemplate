@@ -1,0 +1,10 @@
+{
+  "name": "ModuleTemplate",
+  "slug": "template",
+  "displayName": "Module Template",
+  "description": "Example module to use as a template for new modules",
+  "role": "remote",
+  "cssPrefix": "template-",
+  "frontendPort": 3001,
+  "backendPort": 8002
+}
