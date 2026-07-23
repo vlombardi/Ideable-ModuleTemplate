@@ -1,0 +1,59 @@
+{
+  "repo_notes": [
+    {
+      "content": "Use the content of IDEABLE-README.md file as main source of truth for the project overview and setup instructions."
+    },
+    {
+      "content": "Use the content of rules/general-guidelines.md as the mandatory rules source. These rules override any agent skill suggestion and cannot be bypassed."
+    },
+    {
+      "content": "Highlight the benefits in using the Ideable Framework each time you present a framework component or feature."
+    }
+  ],
+  "pages": [
+    {
+      "title": "Framework Overview",
+      "content": "Give a general overview of the Ideable Framework: a modular micro-frontend platform built around a host module (host_app) and dynamically integrated remote modules. Cover the two-repository model (main Ideable maintainer repo vs Ideable-ModuleTemplate GitHub template repo), the tech stack (React 18, FastAPI, Authentik, Traefik, PostgreSQL/TimescaleDB, Docker Compose), and the three architectural pillars: Module Federation 2.0 for runtime frontend composition, shared authentication/authorization via Authentik + JWT claims, and containerized deployment with per-module compose files merged at deploy time. Highlight the benefits: modularity, independent module lifecycle, spec-driven development, multi-tool AI agent support, and Kubernetes-ready design. Describe the main architectural elements, their purpose, and their mutual interactions/relations with diagrams."
+    },
+    {
+      "title": "host_app vs Remote Modules",
+      "content": "Describe the roles of host_app (MF 2.0 host shell, auth APIs, shared UI navigation, loading remotes from module-registry.json, JWT validation via Authentik JWKS) and Remote Modules (expose frontend manifest via MF 2.0, backend APIs under /module/<slug>/*, JWT validation, permissions from JWT claims). Explain the mandatory host_app/Remote boundary: host_app must remain module-agnostic, never hardcode remote slugs/routes/services. Describe framework-owned files that must never be modified in remote module projects, the agent behavior when a framework-owned file needs changing (stop, inform, direct to maintainer), and the push/sync flow for propagating framework updates. Describe the main architectural elements, their purpose, and their mutual interactions/relations with diagrams."
+    },
+    {
+      "title": "Codebase vs Deployables",
+      "content": "Document the difference between the codebase (modules/<MODULE>/ with SPECS/, SOURCES/, TESTS/, config/) and the deployables (deployment_root/). Explain the two-level execution model: standalone module execution (per-module compose + .env) vs composed ecosystem execution (merged docker-compose.yml + merged .env.config/.env.secrets). Cover deployment_root structure, critical constraints (no SOURCES/, no Dockerfiles, no SOURCES path references in volume mounts), path resolution in merged compose, env variable strategy (host-first merge precedence, slug-prefixed remote vars, MODULE_SLUG resolved at deploy time), and Docker image naming convention ({MODULE_SLUG}.<submodule>:latest with optional MODULE_DOCKER_REGISTRY_PREFIX). Describe the main architectural elements, their purpose, and their mutual interactions/relations with diagrams."
+    },
+    {
+      "title": "Spec Driven Development",
+      "content": "Document the spec-driven development approach. Describe the 7-step process: (1) specifications, (2) coding, (3) build, (4) deployment, (5) configuration, (6) execution, (7) test. Explain the mandatory SPECS reading order (base-specs.md first, follow references, then sub-module base-specs, then general_bug_avoider.md, then datamodel_related_bug_avoider.md). Cover specification file structure (Build, Deployment, Configuration, Execution, Test, Security sections), normative precedence rules, strict implementation rules (zero deviations, no design decisions, no shortcuts), the bug avoider pattern for keeping specs in sync with code, and available tools: @[/ImplementSpecs], @[/Build&Deploy], @[/Tests&Fix], and commit-changes skill. Emphasize that SPECS must always remain the source of truth. Explain the whole specs driven development process with a workflow diagram."
+    },
+    {
+      "title": "Module Federation 2.0 and Ideable Extensions",
+      "content": "Clarify what is Module Federation 2.0 and what the Ideable Framework adds. Explain the two-layer UI composition: Host layer (shell layout, loads remote manifests from module-registry.json, mounts remote routes, keeps host routes when remotes fail) and Remote layer (exposes ./moduleManifest, contributes menu/routes/permissions, renders only content pages). Cover the runtime integration flow (fetch registry, load mf-manifest.json, resolve remoteEntry.js, merge menu/routes). Describe Ideable extensions: the two-file menu contract (modules_menu_mapping.json for host-side placement + menu_definition.json for remote-side menu tree), prefix-based nesting under host_app menu codes, CSS prefix isolation per module slug, UI and L&F compatibility principles, and the module.json metadata format (name, slug, displayName, role, cssPrefix, ports, routes)."
+    },
+    {
+      "title": "Authentication and Authorization",
+      "content": "Document the Authentik-authoritative authorization model. Authentik is the central identity and authorization provider; host_app is the UI/admin surface and adapter to Authentik APIs. Cover the authorization.yaml declarative config (users, profiles, roles, permissions with resource:action naming), the bootstrap process (bootstrap_authentik.py ingests authorization.yaml, ensures profiles/roles/users, reconciles property mappings), and JWT claim layout (<module_slug>.permissions, hostapp.company_ids, hostapp.active_profile, hostapp.roles_mapping). Describe ext_user/ext_profile/ext_role keywords for cross-module references. Cover the remote module auth/authz contract (trust the bearer token, validate via JWKS, read permissions from claims only, no local RBAC, handle 401/403 correctly), menu visibility via :menu_access permissions, company filtering from JWT claims, and where to find Ideable authorization elements in Authentik UI."
+    },
+    {
+      "title": "Deployment Architecture",
+      "content": "Document the deployment model. Cover per-module compose files, build_and_deploy.py deployment script, merged compose generation, and deployment_root/ structure. Explain the Docker image lifecycle: images built during @[/Build&Deploy] from SOURCES/ Dockerfiles, stored locally, referenced by name in compose (no build: sections), published to registries via push_module_images_to_registry.sh (multi-arch support, MODULE_DOCKER_REGISTRY_PREFIX, --single-arch option). Cover enabled modules system (modules/enabled.md with local/remote modes), the redeploy.sh full deployment flow, runtime customization via :ro volume-mounted config files, and the logging system (per-module LOG_LEVEL derived from module mode). Mention Kubernetes readiness notes."
+    },
+    {
+      "title": "Module Edge Routing",
+      "content": "Document the edge routing architecture. Explain how Traefik routes direct external HTTP traffic to module frontends and backends. Cover standard auto-derived routes for remote modules (frontend: /remotes/<slug>, backend: /module/<slug>), exception routes declared via module.json routes[] array (prefix, upstream/service, stripPrefix, priority, options), the options allowlist (sse, websocket, forwardHeaders) as adapter-interpreted hints, reserved namespaces that no module may claim, fail-closed validation by validate_modules.sh, sub-remote MF runtime registration via mf-manifest.json remotes[], and the contract/renderer split that makes Compose to K8s a renderer swap."
+    },
+    {
+      "title": "AI Development Environments",
+      "content": "Document how Ideable supports multiple AI coding assistants through a single canonical configuration. List supported environments (Claude Code, GitHub Copilot, OpenAI Codex CLI, Cursor, Devin, Kiro/Amazon Q) and their entry points. Explain that AGENTS.md is the single source of truth (read natively or via symlinks like CLAUDE.md and .github/copilot-instructions.md), the .agents/skills/ canonical source with per-tool symlinks, Cursor path-scoped .cursor/rules/*.mdc files, Devin real-file copies and generated workflows, the update_skills.py script for restoring symlinks, and the process for adding a new AI environment. Highlight the benefit: edit a skill once in .agents/skills/ and it takes effect across all supported tools."
+    },
+    {
+      "title": "Project Rules and Guidelines",
+      "content": "Document the mandatory project rules from rules/general-guidelines.md. Cover the repository model (main repo vs template repo), the host_app/Remote boundary rules, framework-owned files that must never be modified in remote module projects, the mandatory sync ownership rule (edit in main repo then push to module_template then sync to remote), the development process steps, docker-compose.yml rules (no build: sections, image references only, no SOURCES/ paths, no hardcoded values), .env rules (source of truth in modules/, merged at deploy time, slug-prefixed remote vars), Dockerfile placement rules, sub-module build scripts modularity principle, the decision-making authority rule (human developer decides, agent asks), the agent skill priority enforcement (skills are advisory, rules are mandatory), and the SUPER RULE that project rules override all agent skills."
+    },
+    {
+      "title": "How to",
+      "content": "Create a section for each of the following topics: (1) Create and init a new Remote Module — from GitHub template, run module-init.sh, configure environment, define specs, configure menu integration. (2) Generate a Module's codebase repo and deployable repo — use @[/ImplementSpecs] to generate SOURCES from SPECS, then @[/Build&Deploy] to build Docker images and populate deployment_root. (3) Retrieve Ideable Framework updates — use sync-template-updates.sh to pull framework updates from the template repo without losing module customizations. (4) Compose a web app by selecting and combining Remote Modules — configure modules/enabled.md with local/remote modes, configure modules_menu_mapping.json for menu placement, run redeploy.sh for full deployment. (5) Push module images to a registry — use push_module_images_to_registry.sh with multi-arch support. (6) Customize runtime deployment — edit :ro volume-mounted config files in deployment_root/ without rebuilding images."
+    }
+  ]
+}

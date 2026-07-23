@@ -1,0 +1,272 @@
+networks:
+  broker_network:
+    driver: bridge
+  timescale_network:
+    driver: bridge
+  ideable_network:
+    driver: bridge
+
+# All persistent and tmp data for services is now rooted under DATA_FOLDER env var
+
+# This Docker Compose file uses environment variables from .env file
+# For version management, update the VERSIONS section in .env
+
+services:
+
+  ###############
+  #   Database  #
+  ###############
+  database:
+    env_file:
+      - .env.config
+      - .env.secrets
+    # host_app database image — bakes init scripts (authentik DB creation + host_app schema)
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.database:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.database
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - timescale_network
+      - ideable_network
+    volumes:
+      - timescale_data_v4:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ###############
+  #   Backend   #
+  ###############
+  backend:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.backend:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.backend
+    ports:
+      - "${BACKEND_PORT:-8001}:8001"
+    environment:
+      - LOG_LEVEL=${HOSTAPP_LOG_LEVEL:-INFO}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      - POSTGRES_HOST=${AUTHENTIK_POSTGRES_HOST}
+      - POSTGRES_PORT=${AUTHENTIK_POSTGRES_PORT}
+      - AUTHENTIK_JWKS_URL=http://authentik-server:9000/application/o/${APP_SLUG}/jwks/
+      - AUTHENTIK_API_URL=${AUTHENTIK_INTERNAL_URL}/api/v3
+      - AUTHENTIK_API_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
+    volumes:
+      - authentik_shared:/shared:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      database:
+        condition: service_healthy
+      authentik-server:
+        condition: service_healthy
+      authentik-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    labels:
+      - "traefik.enable=false"
+
+  ####################
+  #     Frontend     #
+  ####################
+  frontend:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.frontend:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend-router.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend-router.entrypoints=websecure"
+      - "traefik.http.routers.frontend-router.tls=true"
+      - "traefik.http.routers.frontend-router.tls.certresolver=le"
+      - "traefik.http.services.frontend-service.loadbalancer.server.port=80"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=${VITE_API_URL}
+      - VITE_OIDC_AUTHORITY=${VITE_OIDC_AUTHORITY}
+      - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
+      - VITE_OIDC_REDIRECT_URI=${VITE_OIDC_REDIRECT_URI}
+      - VITE_OIDC_POST_LOGOUT_REDIRECT_URI=${VITE_OIDC_POST_LOGOUT_REDIRECT_URI}
+      - VITE_APP_TITLE=${VITE_APP_TITLE}
+      - VITE_SHOW_APP_NAME_ON_HEADER=${VITE_SHOW_APP_NAME_ON_HEADER}
+    volumes:
+      - ./config:/usr/share/nginx/html/config:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "http://127.0.0.1:80" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ####################
+  #    Authentik     #
+  ####################
+  authentik-server:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-server
+    command: server
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRESQL__PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_LISTEN__HTTP: 0.0.0.0:9000
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      # Environment variables for blueprint substitution
+      EXTERNAL_BASE_HOST: ${EXTERNAL_BASE_HOST}
+      APP_NAME: ${APP_NAME}
+    volumes:
+      # Mount blueprints directory for automatic configuration
+      - ./authentik/blueprints:/blueprints/custom:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    ports:
+      - "${AUTHENTIK_PORT_HTTP:-9000}:9000"
+      - "${AUTHENTIK_PORT_HTTPS:-9443}:9443"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/api/v3/root/config/')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  authentik-bootstrap:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.authentik-bootstrap:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-bootstrap
+    working_dir: /bootstrap
+    volumes:
+      - ./authentik/blueprints:/bootstrap/assets/blueprints:rw
+      - ./config:/bootstrap/config:ro
+      - authentik_shared:/shared
+      - ../../modules:/modules:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    environment:
+      AUTHENTIK_URL: "${AUTHENTIK_INTERNAL_URL}"
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      HOSTAPP_ROOT: /modules/host_app
+
+      # Configurazione applicazione
+      APP_NAME: ${APP_NAME}
+      APP_SLUG: ${APP_SLUG}
+      APP_URL: https://${EXTERNAL_BASE_HOST}
+      APP_CALLBACK_URL: https://${EXTERNAL_BASE_HOST}/auth/callback
+      CLIENT_ID: ${CLIENT_ID}
+      CLIENT_SECRET: ${CLIENT_SECRET}
+
+      # PostgreSQL access for token upsert pre-flight
+      AUTHENTIK_POSTGRES_HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRES_PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRES_USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRES_DB: ${AUTHENTIK_POSTGRES_DB}
+
+  authentik-worker:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-worker
+    command: worker
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRESQL__PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_LOG_LEVEL: info
+    networks:
+      - timescale_network
+      - ideable_network
+    user: root
+    depends_on:
+      database:
+        condition: service_healthy
+
+  ####################
+  #     Traefik       #
+  ####################
+  traefik:
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      - EXTERNAL_BASE_HOST=${EXTERNAL_BASE_HOST}
+      - ACME_EMAIL=${ACME_EMAIL}
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.traefik:latest
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.traefik
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+      - "--log.level=DEBUG"
+      - "--accesslog=true"
+    user: root
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+      - "${TRAEFIK_DASHBOARD_PORT:-8088}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml.template:/etc/traefik/dynamic.yml.template:ro
+      - ./traefik/acme.json:/etc/traefik/acme.json
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+
+volumes:
+  timescale_data_v4:
+    name: ${APP_SLUG}_timescale_data_v4
+  authentik_shared:
+  authentik:

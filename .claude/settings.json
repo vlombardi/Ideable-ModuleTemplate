@@ -1,0 +1,19 @@
+{
+  "env": {
+    "OPENROUTER_EXTRA_HEADERS": "{\"X-Session-Id\": \"Ideable\"}"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/vinz/VinzAgentsProjects/Ideable diff HEAD -- modules/host_app/backend/SOURCES/app/auth.py modules/host_app/frontend/SOURCES/src/components/Sidebar.tsx modules/module_template/frontend/SOURCES/src/pages/TemplateItems.tsx)",
+      "Bash(npx tsc *)",
+      "Bash(git stash *)",
+      "Bash(claude --version)",
+      "Bash(cat /Users/vinz/VinzAgentsProjects/Ideable/.claude/settings.json 2>/dev/null | head -60; echo \"---\"; ls -la /Users/vinz/.claude/settings.json 2>/dev/null && echo \"user settings exists\")",
+      "Read(//Users/vinz/.claude/**)",
+      "Bash(tee /private/tmp/claude-501/-Users-vinz-VinzAgentsProjects-Ideable/8d6823b0-bf1d-4aa9-a1f0-8614ee9bc434/scratchpad/tsc-before.txt)"
+    ],
+    "additionalDirectories": [
+      "/Users/vinz/.claude"
+    ]
+  }
+}

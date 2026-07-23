@@ -1,0 +1,11 @@
+{
+  "modules": [
+    {
+      "name": "template",
+      "entry": "/remotes/template/mf-manifest.json",
+      "remoteEntry": "/remotes/template/remoteEntry.js",
+      "displayName": "Module Template",
+      "basePath": "/template"
+    }
+  ]
+}
