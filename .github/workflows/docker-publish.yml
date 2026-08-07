@@ -1,0 +1,34 @@
+name: Build and push Docker image
+
+on:
+  push:
+    tags:
+      - 'v*'           # si attiva solo sui tag tipo v1.0.0
+  # oppure:
+  # push:
+  #   branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # necessario per pushare su ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}  # token automatico, nessun segreto da configurare
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/nome-immagine:${{ github.ref_name }}

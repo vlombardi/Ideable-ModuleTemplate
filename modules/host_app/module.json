@@ -1,0 +1,10 @@
+{
+  "name": "host_app",
+  "slug": "hostapp",
+  "displayName": "Host App",
+  "description": "Host module providing authentication, authorization, and shared UI shell",
+  "role": "host",
+  "cssPrefix": "hostapp-",
+  "frontendPort": 3000,
+  "backendPort": 8001
+}
