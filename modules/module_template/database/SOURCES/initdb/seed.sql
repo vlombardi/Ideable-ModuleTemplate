@@ -1,0 +1,11 @@
+-- module_template Seed Data
+-- This file is optional. Add initial data for your module here.
+-- It runs after datamodel.sql and authorization.yaml.
+-- Idempotent INSERTs recommended (ON CONFLICT DO NOTHING).
+
+-- Example: Insert initial template items.
+-- Only business columns exist on template_items (id, name, description); actor/audit data is
+-- captured by Continuum, so there is no created_by/status column (audit-trail-specs §2.2bis).
+-- INSERT INTO template_items (name, description)
+-- VALUES ('Sample Item', 'A sample template item')
+-- ON CONFLICT DO NOTHING;

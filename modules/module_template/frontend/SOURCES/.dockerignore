@@ -1,0 +1,5 @@
+# Keep the frontend build context lean; deps are installed fresh in the image.
+node_modules
+dist
+.mf
+.ideable-ui

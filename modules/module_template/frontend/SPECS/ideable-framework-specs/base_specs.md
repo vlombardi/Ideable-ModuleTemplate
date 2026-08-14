@@ -1,0 +1,159 @@
+# IMPORTANT: Read This First
+
+**This file (`base-specs.md`) is the MANDATORY starting point for any coding agent action on this module's frontend.**
+
+Before implementing, modifying, or troubleshooting any frontend component, you MUST:
+1. Read `rules/general-guidelines.md`, then
+2. Read this entire file, then
+3. Read `../module-specs.md`, then any other further referenced specs files.
+4. Read `shared-ui-specs.md` for shared remote-mode, authorization, and menu generation rules.
+5. Read `shared-ui-widgets-specs.md` for widget-level behavior and layout rules (tables, modals, dropdowns, etc.).
+
+Following the order above, if two rules conflict at the same level, the above order defines the priority logic (i.e., rule in previous point wins, e.g., rule in point 1 wins over rule in point 2, and so on).
+
+
+## Specification Files Chain
+
+| File | Status | Purpose |
+|---|---|---|
+| `shared-ui-specs.md` | **MANDATORY** | Shared cross-module UI contract |
+| `shared-ui-widgets-specs.md` | **MANDATORY** | Shared widget-level behaviour |
+| `../module-specs.md` | **MANDATORY** | This module's entity/menu/route specs |
+| `framework-css-classes-reference.md` | optional (reference) | Semantic CSS class-token catalog owned by `@ideable/ui` (canonical tokens in `reusable.ui/styles/`) |
+| `look-and-feel-branding.md` | optional (reference) | How to change L&F (colors/logo/fonts) at build time vs deploy time, by role |
+
+> **Deployment Rules**: Per `rules/general-guidelines.md` §docker-compose.yml rules:
+> - No `build:` sections in docker-compose
+> - Docker images must be pre-built before deployment
+> - No `SOURCES/` path references in docker-compose
+
+## Build
+
+- The frontend consumes the shared **`@ideable/ui`** package (repo-root `reusable.ui/`) via a `file:` dependency. Because a repo-root sibling is outside the SOURCES-rooted Docker build context, both build paths provide it as the **`ideable_ui` named BuildKit build context** (`--build-context ideable_ui=<repo>/reusable.ui`): the local build via **`SPECS/build.sh`** (auto-run by `build_and_deploy.py` in place of the generic build), and the registry-publish path via `push_module_images_to_registry.py`'s `buildx` call — so both stage `@ideable/ui` identically. The Dockerfile `COPY --from=ideable_ui`s it to `./.ideable-ui`, repoints the `file:` dependency, drops the stale lockfile, and installs with `npm install --install-links`. `node_modules`/generated files are excluded via `reusable.ui/.dockerignore` and each frontend's `SOURCES/.dockerignore`; `@ideable/ui`'s runtime deps install **fresh inside** the image (never copy host `node_modules` — Tailwind/rspack native binaries are platform-specific).
+- **`WIDGET_EXAMPLES`** build arg (default `true`): `false` excludes the dev-only Widget Examples gallery + its heavy deps (Recharts) from the bundle. The registry-publish path builds with `WIDGET_EXAMPLES=false`.
+- **Shared CSS is precompiled.** The frontend's root CSS does `@import "@ideable/ui/styles"`, which resolves to the **plain, precompiled** `reusable.ui/styles/compiled.css` (the `ideable:` layer + tokens). This is mandatory: Tailwind v4 honors only one prefix per build, so re-importing `tailwindcss prefix(ideable)` from the shared package would clobber this frontend's own `${APP_SLUG}:` layer (total L&F loss). Module-owned page markup uses the module's own prefix; shared widgets use `ideable:` (from `compiled.css`). Regenerate `compiled.css` with `npm run build:css` in `reusable.ui/` (tracked artifact) whenever a widget/primitive changes an `ideable:` class.
+- Produces Docker image only; no DIST folder.
+- **Note**: `${APP_SLUG}` and `${APP_SLUG_UPPER}` are placeholders. Read the actual slug from `module.json` `slug` field.
+
+## Technology
+
+- Build tool: Rsbuild.
+- Module Federation role: remote (`name: ${APP_SLUG}` — read from `module.json` `slug`).
+- `rsbuild.config.ts` must expose `./moduleManifest`.
+- Output and dev asset prefix must be `/remotes/${APP_SLUG}/`.
+
+## Module Identity Reference (Source of Truth: `module.json`)
+
+All module-specific values below use `${APP_SLUG}` placeholder.
+Read the actual value from `module.json` in this module's root:
+- `slug` → used for CSS prefix, MF name, URLs, permissions namespace
+- `name` → used for display names
+
+## Module Manifest
+
+- `src/moduleManifest.ts` must export the remote module contract used by host_app.
+- **Example contract baseline**: this file uses the `template` slug as the reference example for host_app-integrated remote modules.
+- This module implements, as example baseline:
+  - `slug: ${APP_SLUG}` (from `module.json`)
+  - Menu items are host_app absolute paths including module base path (for example `/${APP_SLUG}/items`)
+  - Route descriptors are module-local (for example `/dashboard`, `/items`) and host_app applies `basePath`
+  - One menu item and one route are required for each main entity derived from `database/SPECS/datamodel.sql`
+  - Menu item contract fields are required: `name`, `href`, `icon`, optional `order`
+  - Permissions in `${APP_SLUG}.items.*` namespace (general pattern: `${APP_SLUG}.${entity}.*`)
+
+## Authentication and session handling
+
+- Remote modules must rely on host_app-managed authentication and session renewal.
+- Do not configure an independent OIDC login flow inside the remote module.
+- Do not use iframe-based silent renew.
+- Do not call `signinSilent()` or `signinRedirect()` from the remote module to recover an expired session.
+- Treat host_app as the source of truth for authentication state, token renewal, and login redirects.
+- Use the access token provided by host_app for authenticated API calls.
+- If an API request fails with `401`, surface an authenticated-session-expired state to the host rather than trying to re-authenticate on its own.
+
+## Audit Trail
+
+The full audit trail contract (backend versioning, association versioning, history endpoint shape,
+permission model, and frontend rendering rules) is defined in the framework spec:
+`modules/module_template/SPECS/ideable-framework-specs/audit-trail-specs.md`
+
+Read that file completely before implementing or modifying any audit trail behaviour. The sections
+below are a mandatory summary of the frontend-specific rules; the framework spec takes precedence
+in case of conflict.
+
+- Every entity page that exposes a history endpoint must include an audit trail action icon
+  (`History` from lucide-react) in the table action column, shown only when `audit_trail:view`
+  is present in `<module_slug>.permissions`.
+- Clicking the icon opens the **Audit Trail Popup** (see `shared-ui-widgets-specs.md`).
+- The popup's first tab shows the selected entity's own history — both field-change rows and
+  association-change rows merged chronologically from the same `/history` endpoint response.
+- Association-change rows (`ASSOCIATE`/`DISASSOCIATE`) must be visually distinguished from
+  field-change rows using `Link`/`Unlink` icons (lucide-react) and show `association_name`,
+  `peer_entity_type`, and `peer_entity_label` instead of a field-value diff.
+- Additional tabs show the peer entity's own field-change history; association-change events
+  belong to the parent entity's tab, not the peer's tab.
+- The legacy per-page "Show audit data" toggle is not allowed.
+- Backend history endpoints return `401` for invalid tokens and `403` when `audit_trail:view`
+  is absent; surface these error states in the popup rather than silently failing.
+
+## Dirty form / navigation guard
+
+- Any page that allows editing or creating data must track whether there are unsaved changes.
+- When the user attempts to leave an edit context with unsaved changes, the UI must prompt before losing work.
+- For in-app navigation, show a confirmation dialog that offers save, discard, or cancel.
+- For browser refresh or tab close, register a `beforeunload` fallback so the browser warns the user that unsaved changes exist.
+
+## Standalone Menu Definition Contract
+
+- The module `config/` folder must include `menu_definition.json` for standalone runtime navigation (module running outside host_app integration).
+- `menu_definition.json` must contain a top-level `menu_definition` array.
+- Each `menu_definition` item must contain:
+  - `menu_item_code`
+  - `menu_item_name`
+  - `icon`
+  - optional `routing` (omitted for container-only nodes)
+  - `sub_items` array with the same recursive item structure
+
+Verification URLs (deployed environment, using `${APP_SLUG}` from `module.json`):
+- `https://<host>/module-registry.json`
+  - Must include `${APP_SLUG}` with `entry: /remotes/${APP_SLUG}/mf-manifest.json` and `remoteEntry: /remotes/${APP_SLUG}/remoteEntry.js`.
+- `https://<host>/remotes/${APP_SLUG}/mf-manifest.json`
+  - Must be reachable and must include exposed module `./moduleManifest`.
+
+## CSS Isolation
+
+- Tailwind prefix must be `${APP_SLUG}:` (Tailwind v4 `prefix()`, slug from `module.json`); shared `@ideable/ui` widgets carry the neutral `ideable:` prefix.
+- Utility classes must follow prefix usage consistently across remote pages/components.
+- Module visual tokens inherit the canonical `@ideable/ui` design tokens by default (the same tokens host_app uses, `reusable.ui/styles/base-tokens.css`) — the module does not redefine them.
+- Module must expose module-scoped override tokens (`--${APP_SLUG}-module-*` under `data-lf="module"`) so it can override inherited values when needed without changing the shared/global tokens.
+
+## Canonical Compatibility Role
+
+- **module_template is the canonical, always-updated compatibility reference** for developers building host_app-integrated remote modules.
+- Module developers should be able to rely on module_template alone to discover required integration patterns for routing, auth, widgets, and L&F behavior.
+- module_template specs and implementation must be kept aligned with the host_app integration rules described in the shared specs/docs (e.g., in `<module_slug>/SPECS/ideable-framework-specs/base-specs.md` and the other framework-spec files in that folder) in the same change cycle whenever integration rules evolve.
+- module_template specs and implementation must be kept aligned with the host_app integration rules described in the shared specs/docs (e.g., in `<module_slug>/<SUB-MODULE-NAME>/SPECS/ideable-framework-specs/base-specs.md` and the other framework-spec files in that folder) in the same change cycle whenever integration rules evolve.
+- **`@ideable/ui` (`reusable.ui/`) is the source of truth for UI, L&F, and widget definitions** (shared widgets/primitives, the `ideable:` layer, and the canonical design tokens). module_template frontend is the canonical **usage/integration reference** — it shows how to *consume* `@ideable/ui` correctly in a remote — not the place those definitions live.
+
+## L&F parity validation requirements
+
+The following checks are mandatory before releasing module_template updates:
+
+1. Automated parity contract checks:
+   - `modules/module_template/frontend/TESTS/test_template_items_table_contract.py`
+   - `modules/module_template/frontend/TESTS/test_lf_parity_contract.py`
+2. Visual snapshot parity checks (Playwright):
+   - `modules/module_template/frontend/TESTS/playwright/tests/lf-parity.spec.ts`
+
+Recommended runner from repository root:
+
+```bash
+./scripts/check_moduletemplate_lf_parity.sh
+```
+
+## Remote L&F Modes
+
+- Default mode (mandatory): module_template pages inherit the canonical `@ideable/ui` visual tokens (identical to host_app's, since both consume the same library).
+- Override mode (optional): module-specific L&F is allowed only through module-scoped token *value* overrides and selectors (build-time `--${APP_SLUG}-module-*` under `data-lf="module"`, or the runtime `config/theme-override.css`) — never by redefining class names or global tokens.
+- Module frontend code must never alter host_app global selectors (`html`, `body`, universal `*`) when running as a remote.
+

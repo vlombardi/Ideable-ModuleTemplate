@@ -1,0 +1,15 @@
+{
+  "name": "moduletemplate-frontend-playwright-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:update": "playwright test --update-snapshots",
+    "test:gallery": "playwright test widget-gallery"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@axe-core/playwright": "^4.10.0"
+  }
+}
