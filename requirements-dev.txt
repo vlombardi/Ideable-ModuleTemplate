@@ -1,0 +1,37 @@
+# Tooling the TEST GATE needs — the single list used by a developer machine and by CI.
+#
+# It exists because they drifted, and the drift made the local gate weaker than it looked while
+# reporting the same "All checks passed". `pydantic` was absent locally, so mypy resolved it to `Any`
+# under `ignore_missing_imports` and never checked `Settings()`; CI installed it and immediately
+# found two real call-site errors. Before that, `sqlalchemy-continuum` was missing locally and a
+# whole test module had been skipped at import for weeks.
+#
+# A gate whose strength depends on what happens to be installed is not a gate. Install with:
+#
+#     .venv/bin/python -m pip install -r requirements-dev.txt
+#
+# (Use `python -m pip`, not `.venv/bin/pip` — this repo's pip shim has been seen pointing at another
+# project's interpreter.)
+ruff
+mypy
+pytest
+pytest-asyncio
+requests
+python-dotenv
+
+# alembic: pinned to the backends' version (SPECS/dependencies.md, and both backend
+# requirements.txt). Without it the Phase B tests — the operation plugins and the Rewriter that
+# emit a new entity's framework DDL — skip at import and the whole module reads as green, which is
+# the failure mode this file exists to prevent.
+alembic==1.13.1
+
+# The application libraries mypy needs in order to CHECK rather than shrug. Each of these, when
+# absent, silently downgrades the type check on the code that uses it.
+sqlalchemy
+sqlalchemy-continuum
+psycopg2-binary
+pydantic
+pydantic-settings
+# PyYAML: the authorization-contract reader parses YAML. Absent, test_authz_seed.py skips
+# instead of running — which is how it behaved in CI while passing locally.
+PyYAML

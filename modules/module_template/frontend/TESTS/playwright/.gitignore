@@ -1,0 +1,8 @@
+node_modules/
+auth/.auth/
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
+# Visual baselines (tests/**/*-snapshots/) ARE committed once generated in the
+# CI/Linux environment — do not ignore them.

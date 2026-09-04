@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Module Template</title>
+    <!-- Runtime configuration, written at container start. Must load BEFORE the bundle: getEnv()
+         reads window.__ENV__ first, and the OIDC config is read during module initialisation. -->
+    <script src="/env-config.js"></script>
+    <script>
+      // The title is configuration, not a build input.
+      if (window.__ENV__ && window.__ENV__.VITE_APP_TITLE) {
+        document.title = window.__ENV__.VITE_APP_TITLE
+      }
+    </script>
+    <script>
+      // Runtime Look & Feel override (no rebuild): load config/theme-override.css if present.
+      // Appended at runtime so it lands AFTER the compiled bundle; being unlayered it wins the
+      // cascade. The href is RELATIVE so it resolves correctly both standalone (served at /)
+      // and behind the gateway (served under /remotes/<slug>/, prefix stripped to /config/...).
+      // Edit deployment_root/modules/<slug>/config/theme-override.css to recolor this module and
+      // all @ideable/ui widgets without rebuilding the image.
+      ;(function () {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = 'config/theme-override.css?t=' + Date.now()
+        document.head.appendChild(link)
+      })()
+    </script>
+  </head>
+  <body class="ideable-scope" data-lf="hostapp">
+    <div id="root"></div>
+  </body>
+</html>

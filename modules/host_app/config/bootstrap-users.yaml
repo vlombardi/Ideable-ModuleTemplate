@@ -1,0 +1,29 @@
+# Bootstrap users — a fresh install's starting accounts, and the dev/test personas.
+#
+# The provisioning work removed `users:` from authorization.yaml, because declaring people in a file that ships
+# inside an image means onboarding someone requires a build and a redeploy — which at production is
+# not possible at all. Real users now arrive from the customer's directory (federation + JIT + the
+# periodic sync in services/provisioning.py) or through self-registration with approval.
+#
+# What is left here is what a directory cannot supply:
+#   * the first administrator, so a fresh install is usable before any directory is connected;
+#   * the fixed personas the test suites authenticate as.
+#
+# Set BOOTSTRAP_USERS_ENABLED=false once a directory is connected. The file is then ignored
+# entirely and every account comes from the directory.
+#
+users:
+- username: sadmin
+  email: sadmin@ideable.tech
+  full_name: Super Admin
+  profiles:
+  - admin
+  - security_officer
+  - reader
+  superadmin: true
+- username: guest
+  email: guest@ideable.tech
+  full_name: Guest User
+  profiles:
+  - reader
+  superadmin: false

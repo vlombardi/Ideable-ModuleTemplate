@@ -1,0 +1,68 @@
+# Static analysis for the Python backends and the identity bootstrap.
+#
+# The gate exists because the *other* language proved it was needed: the frontends are transpiled
+# without typechecking, and 27 TypeScript errors accumulated unseen — including a widget generic
+# that made every association table a type error. `scripts/common/run_enabled_tests.sh` therefore
+# runs `ruff`, `mypy` **and** `tsc --noEmit`; a violation in either language fails the build.
+#
+# On its first run this configuration found a live defect: `F841` on `paged_joins` in
+# module_template's `crud.py`, where the keyset-pagination predicate was built, bound, assembled —
+# and then dropped from the query, while the offset was forced to 0. Every cursor page returned the
+# first page. That is the kind of thing the gate is for.
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["alembic/versions", "DIST", "deployment_root", "node_modules"]
+
+[tool.ruff.lint]
+# DELIBERATELY NARROW, and this is the important part of the file.
+#
+# The full default set reports 892 findings across the two backends. 606 of those are `pyupgrade`
+# modernisation (`Optional[X]` → `X | None`), which is churn with no defect value, and 97 are `B008`
+# — a false positive for FastAPI, whose `Depends(...)` in a signature default is the framework's
+# entire calling convention.
+#
+# So the gate starts with the rules that catch *defects*: undefined names, unused imports and
+# variables, redefinitions, f-strings that interpolate nothing, and silently swallowed exceptions.
+# Widening it is a follow-up with its own diff — not something to smuggle in behind a task whose
+# subject is the runtime.
+select = [
+    "E9",    # syntax / IO errors — never ignorable
+    "F",     # pyflakes: undefined names, unused imports and locals, redefinitions
+    "F541",  # f-string with no placeholders — usually a lost variable
+    "S110",  # try/except/pass — the guideline names this: "eccezioni catturate e ignorate"
+    "S112",  # try/except/continue — same
+]
+
+# Every current exception to S110/S112 carries an inline `# noqa: … — <reason>` at its site. That is
+# on purpose: a blanket per-file ignore would hide the next one, and the value of the rule is in the
+# NEXT one, not the eleven already reviewed.
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on structure and deliberately import things they do not call.
+"**/TESTS/**" = ["F401", "F811"]
+
+[tool.mypy]
+python_version = "3.11"
+# Deliberately permissive to start. The codebase has widespread but unenforced hints; turning on
+# strict mode here would produce a wall of findings that this task cannot honestly triage, and a
+# gate nobody can pass is a gate that gets disabled. What is enforced from day one is the class that
+# breaks at runtime: calling something that does not exist, and returning the wrong shape.
+# pydantic ships a mypy plugin, and without it `Settings()` reads as a constructor call with every
+# required field missing -- `Missing named argument "DATABASE_URL"`. It is not: BaseSettings fills
+# those from the environment, which is the whole point of the class. The plugin teaches mypy that.
+#
+# This surfaced the day CI started running mypy with pydantic installed while the local venv did not
+# have it, so mypy resolved pydantic to `Any` locally and checked nothing. requirements-dev.txt now
+# pins one list for both, because a gate whose strength depends on what happens to be installed is
+# not a gate.
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = false
+exclude = "(alembic/versions|DIST|deployment_root|node_modules)"
+

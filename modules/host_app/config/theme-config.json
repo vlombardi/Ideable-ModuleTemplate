@@ -1,0 +1,193 @@
+{
+  "version": "1.0.0",
+  "description": "HostApp theme configuration for Look & Feel reference. This file documents the current theme tokens used in the compiled CSS. Note: Tailwind CSS is compiled at build time, so changes to this file require a frontend rebuild to take effect.",
+  "theme": {
+    "colors": {
+      "primary": {
+        "value": "#3b82f6",
+        "description": "Primary action color (default for main buttons)"
+      },
+      "primary-foreground": {
+        "value": "#ffffff",
+        "description": "Text color on primary background"
+      },
+      "destructive": {
+        "value": "#ef4444",
+        "description": "Destructive action color (delete, danger)"
+      },
+      "destructive-foreground": {
+        "value": "#ffffff",
+        "description": "Text color on destructive background"
+      },
+      "secondary": {
+        "value": "#64748b",
+        "description": "Secondary action color"
+      },
+      "secondary-foreground": {
+        "value": "#ffffff",
+        "description": "Text color on secondary background"
+      },
+      "accent": {
+        "value": "#f1f5f9",
+        "description": "Accent/hover color"
+      },
+      "accent-foreground": {
+        "value": "#0f172a",
+        "description": "Text color on accent background"
+      },
+      "muted": {
+        "value": "#f1f5f9",
+        "description": "Muted/disabled color"
+      },
+      "muted-foreground": {
+        "value": "#64748b",
+        "description": "Muted text color"
+      },
+      "background": {
+        "value": "#ffffff",
+        "description": "Background color"
+      },
+      "foreground": {
+        "value": "#0f172a",
+        "description": "Foreground text color"
+      },
+      "card": {
+        "value": "#ffffff",
+        "description": "Card background color"
+      },
+      "card-foreground": {
+        "value": "#0f172a",
+        "description": "Text color on card background"
+      },
+      "popover": {
+        "value": "#ffffff",
+        "description": "Popover/dropdown background color"
+      },
+      "popover-foreground": {
+        "value": "#0f172a",
+        "description": "Text color on popover background"
+      },
+      "border": {
+        "value": "#e2e8f0",
+        "description": "Default border color"
+      },
+      "input": {
+        "value": "#e2e8f0",
+        "description": "Input border color"
+      },
+      "ring": {
+        "value": "#3b82f6",
+        "description": "Focus ring color"
+      }
+    },
+    "borderRadius": {
+      "sm": {
+        "value": "0.125rem",
+        "description": "Small border radius (select items)"
+      },
+      "md": {
+        "value": "0.375rem",
+        "description": "Medium border radius (default for buttons, inputs)"
+      },
+      "lg": {
+        "value": "0.5rem",
+        "description": "Large border radius (cards, dialogs)"
+      }
+    },
+    "spacing": {
+      "xs": {
+        "value": "0.25rem",
+        "description": "Extra small spacing"
+      },
+      "sm": {
+        "value": "0.5rem",
+        "description": "Small spacing"
+      },
+      "md": {
+        "value": "0.75rem",
+        "description": "Medium spacing"
+      },
+      "lg": {
+        "value": "1rem",
+        "description": "Large spacing"
+      },
+      "xl": {
+        "value": "1.5rem",
+        "description": "Extra large spacing"
+      }
+    },
+    "typography": {
+      "fontSizes": {
+        "xs": {
+          "value": "0.75rem",
+          "description": "Extra small text"
+        },
+        "sm": {
+          "value": "0.875rem",
+          "description": "Small text (default for form labels, descriptions)"
+        },
+        "base": {
+          "value": "1rem",
+          "description": "Base text size"
+        },
+        "lg": {
+          "value": "1.125rem",
+          "description": "Large text"
+        },
+        "xl": {
+          "value": "1.25rem",
+          "description": "Extra large text"
+        },
+        "2xl": {
+          "value": "1.5rem",
+          "description": "2x large text (card titles)"
+        },
+        "3xl": {
+          "value": "1.875rem",
+          "description": "3x large text (page headings)"
+        },
+        "4xl": {
+          "value": "2.25rem",
+          "description": "4x large text (hero headings)"
+        }
+      },
+      "fontWeights": {
+        "medium": {
+          "value": "500",
+          "description": "Medium weight (default for buttons, labels)"
+        },
+        "semibold": {
+          "value": "600",
+          "description": "Semibold weight (headings, emphasis)"
+        },
+        "bold": {
+          "value": "700",
+          "description": "Bold weight (strong emphasis)"
+        }
+      }
+    },
+    "shadows": {
+      "sm": {
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "description": "Small shadow (cards)"
+      },
+      "md": {
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "description": "Medium shadow (dropdowns, popovers)"
+      },
+      "lg": {
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "description": "Large shadow (dialogs)"
+      }
+    }
+  },
+  "cssPrefix": "hostapp",
+  "cssPrefixFormat": "colon",
+  "notes": [
+    "This configuration file is for reference and documentation purposes only.",
+    "Tailwind CSS is compiled at build time, so changes to this file do not affect the running application without a rebuild.",
+    "To customize the theme at runtime, consider using CSS variables or a separate runtime CSS file approach.",
+    "Remote modules should use their own CSS prefix (e.g., 'template:' for module_template) to avoid conflicts.",
+    "The framework CSS classes reference is available at: modules/host_app/frontend/SPECS/framework-css-classes-reference.md"
+  ]
+}

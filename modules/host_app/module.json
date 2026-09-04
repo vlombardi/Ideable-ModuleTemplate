@@ -1,0 +1,25 @@
+{
+  "name": "host_app",
+  "slug": "hostapp",
+  "displayName": "Host App",
+  "description": "Host module providing authentication, authorization, and shared UI shell",
+  "role": "host",
+  "version": "1.0.0",
+  "cssPrefix": "hostapp-",
+  "consumedImageTag": "1.6.0",
+  "frontendPort": 3000,
+  "backendPort": 8001,
+  "dependsOn": [],
+  "provides": {
+    "gates": [
+      {
+        "service": "database",
+        "condition": "service_healthy"
+      },
+      {
+        "service": "authentik-bootstrap",
+        "condition": "service_completed_successfully"
+      }
+    ]
+  }
+}

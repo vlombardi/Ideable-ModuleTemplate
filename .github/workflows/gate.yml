@@ -1,0 +1,162 @@
+name: Gate
+
+# The parts of the suite that need nothing but a checkout: the static-analysis gate
+# (ruff / mypy / tsc) and every test that reads the repository rather than a running stack.
+#
+# Measured 2026-08-26: 497 of 818 test functions need no Postgres, Authentik, Traefik or Docker,
+# and nearly everything broken that day lived among them — the contract tests, the plan/branch
+# check, the frontend port agreement, the .dockerignore recursion, and a mypy failure the local
+# runner was reporting as PASSED. The remaining 321 integration tests still run locally via
+# scripts/common/run_enabled_tests.sh; this job is what cannot be skipped by forgetting.
+#
+# IT IS BYPASSABLE, ON PURPOSE. A gate that can trap you during a production hot-fix is a gate that
+# gets deleted. The escape hatch is a commit trailer carrying a REASON, so a bypass is deliberate,
+# one line, and permanently recorded in git history rather than a flag someone flips in a UI:
+#
+#     Gate-Override: <why this could not wait>
+#
+# The failing job prints that instruction, so it is found at the moment it is needed and not in a
+# document nobody opens under pressure.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+  # Runnable on demand. Without this the only way to see whether the gate works is to push and
+  # hope -- and a gate nobody has watched run is a gate nobody knows is wired up. It also gives an
+  # operator a way to re-verify after a `Gate-Override` without inventing an empty commit.
+  workflow_dispatch:
+
+jobs:
+  gate:
+    name: Static analysis + stack-free tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the plan/branch check reads branch names
+
+      - name: Look for a deliberate override
+        id: override
+        run: |
+          # Read the trailer from the pushed commit. `git log -1` is enough: the override applies to
+          # the tip being pushed, which is the commit a person decided to ship.
+          reason="$(git log -1 --pretty=%B | sed -n 's/^Gate-Override:[[:space:]]*//p' | head -1)"
+          if [ -n "$reason" ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "reason=$reason" >> "$GITHUB_OUTPUT"
+            {
+              echo "## ⚠️ Gate overridden"
+              echo ""
+              echo "**Reason:** $reason"
+              echo ""
+              echo "This commit shipped without the gate passing, deliberately. The reason is in the"
+              echo "commit message permanently. Re-run the full suite when the emergency is over:"
+              echo '```'
+              echo './scripts/common/run_enabled_tests.sh'
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Gate overridden::$reason"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.override.outputs.active != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node
+        if: steps.override.outputs.active != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Python tooling
+        if: steps.override.outputs.active != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          # ONE list, shared with the developer machine. An inline list here drifted from what was
+          # installed locally, and the drift made the LOCAL gate weaker while reporting the same
+          # "All checks passed": pydantic was absent locally, so mypy resolved it to `Any` and never
+          # checked `Settings()`. CI installed it and found two real call-site errors on its first run.
+          pip install -r requirements-dev.txt
+
+      - name: ruff
+        if: steps.override.outputs.active != 'true'
+        shell: bash
+        run: |
+          # `modules` and `scripts` exist in every project shape, master or remote.
+          ruff check modules scripts
+
+      - name: mypy
+        if: steps.override.outputs.active != 'true'
+        shell: bash
+        run: |
+          set -uo pipefail
+          # DISCOVERED, not listed. This workflow syncs to every remote module project, where
+          # `modules/host_app/` holds only module.json and config/ — no backend SOURCES at all — and
+          # the module's own directory carries the module's name, not `module_template`. Naming
+          # either would fail in every remote project on the first push.
+          rc=0
+          found=0
+          for d in modules/*/backend/SOURCES/app; do
+            [ -d "$d" ] || continue
+            found=$((found + 1))
+            echo "::group::mypy $d"
+            if ! mypy "$d"; then rc=1; fi
+            echo "::endgroup::"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error title=No backends found::modules/*/backend/SOURCES/app matched nothing — mypy checked nothing."
+            exit 1
+          fi
+          exit $rc
+
+      - name: Stack-free tests
+        if: steps.override.outputs.active != 'true'
+        shell: bash
+        env:
+          IDEABLE_UNRECORDED_RUN: '1'
+          IDEABLE_CI: '1'
+        run: |
+          set -uo pipefail
+          # The set is COMPUTED, not listed: scripts/common/stack_free_tests.py derives it from what
+          # each file imports, so a new test lands in the right half by itself. A hardcoded list
+          # would be right the day it was written and silently wrong afterwards.
+          #
+          # ONE PYTEST PER SUITE. Running several TESTS trees in one process makes the wrong
+          # conftest.py win — host_app's tests get module_template's and die with
+          # `cannot import name 'POSTGRES_DB' from 'conftest'`. run_enabled_tests.sh has always run
+          # one pytest per suite for this reason.
+          ./scripts/common/stack_free_tests.py --by-suite > /tmp/suites.txt
+          rc=0
+          while IFS= read -r group; do
+            [ -z "$group" ] && continue
+            echo "::group::pytest $(echo "$group" | awk '{print $1}' | xargs dirname)"
+            if ! pytest -q $group -p no:cacheprovider </dev/null; then rc=1; fi
+            echo "::endgroup::"
+          done < /tmp/suites.txt
+          exit $rc
+
+      - name: How to proceed if this failed
+        if: failure()
+        run: |
+          {
+            echo "## This gate failed"
+            echo ""
+            echo "Fix it, or — **if you are mid-incident and this cannot wait** — bypass it"
+            echo "deliberately by adding a trailer to the commit:"
+            echo ""
+            echo '```bash'
+            echo 'git commit --amend --trailer "Gate-Override: hot-fix for <what broke>, suite re-run to follow"'
+            echo 'git push --force-with-lease'
+            echo '```'
+            echo ""
+            echo "The reason stays in git history, and this job reports the override loudly rather"
+            echo "than silently passing. Re-run the full suite once the emergency is over."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Gate failed::Fix it, or bypass with a 'Gate-Override: <reason>' commit trailer — see the job summary."

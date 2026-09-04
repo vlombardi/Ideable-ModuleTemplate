@@ -1,0 +1,678 @@
+# Compose prefixes the PROJECT NAME onto every network it declares, so a network whose own name
+# repeats the slug comes out stuttering: project `ideable` + `ideable_network` produced
+# `ideable_ideable_network`. `name:` sets the object name explicitly and skips the prefix — the same
+# convention the volumes below already use (`name: ${APP_SLUG}_authentik_pgdata`).
+#
+# The KEY stays `ideable_network`, so every `networks: - ideable_network` in the services is
+# unaffected; only the Docker object name changes.
+#
+# `broker_network` was declared here and referenced by NO service, so Docker never created it — only
+# `ideable_ideable_network` and `ideable_timescale_network` ever existed. Removed rather than carried
+# along inertly: a declaration nothing uses reads as infrastructure that exists.
+networks:
+  timescale_network:
+    name: ${APP_SLUG}_timescale_network
+    driver: bridge
+  ideable_network:
+    name: ${APP_SLUG}_network
+    driver: bridge
+
+# All persistent and tmp data for services is now rooted under DATA_FOLDER env var
+
+# This Docker Compose file uses environment variables from .env file
+# For version management, update the VERSIONS section in .env
+
+services:
+
+  ###############
+  #   Database  #
+  ###############
+  database:
+    env_file:
+      - .env.config
+      - .env.secrets
+    # host_app database image — bakes init scripts (authentik DB creation + host_app schema)
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.database:${IMAGE_TAG}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.database
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      # Bound to loopback by default: the DB must not be reachable from outside the host.
+      # Set POSTGRES_BIND=0.0.0.0 to publish on all interfaces (not recommended).
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - timescale_network
+      - ideable_network
+    volumes:
+      - timescale_data_v4:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${DATABASE_CPU_LIMIT:-2}"
+          memory: ${DATABASE_MEM_LIMIT:-2g}
+        reservations:
+          memory: ${DATABASE_MEM_RESERVATION:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  ###############
+  #   Backend   #
+  ###############
+  # SYNC-MANAGED-BEGIN: seed-job
+  ############################
+  #    host_app - Seed       #
+  ############################
+  # DATA ONLY, and mounted rather than baked. Alembic owns every CREATE/ALTER/DROP; this job
+  # inserts the rows a clean installation needs to be functionally consistent. It runs on EVERY
+  # deploy: seed.sql must be idempotent, which makes a "did this already run?" ledger unnecessary
+  # and removes the order-dependent trap that left module_runtime_meta missing in the audit-correctness work.
+  #
+  # In production this seed is effectively inert — a real deployment starts from a restored
+  # backup, where every row it would insert already exists.
+  seed:
+    image: postgres:16-alpine
+    container_name: ${APP_SLUG}.hostapp.seed
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST_=database
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+
+        until pg_isready -h database -p 5432 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"; do
+          sleep 2
+        done
+
+        # The reference instant for synthetic audit-creation rows. Written once and never
+        # updated: derived per process it differs between workers and changes on restart, so the
+        # same record reports different creation timestamps to different users.
+        psql -v ON_ERROR_STOP=1 -h database -p 5432 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -c "INSERT INTO module_runtime_meta (key, value) VALUES ('system_epoch', NOW()) ON CONFLICT (key) DO NOTHING;"
+
+        if [ -s /module/seed.sql ]; then
+          psql -v ON_ERROR_STOP=1 -h database -p 5432 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -f /module/seed.sql
+          echo "seed.sql applied"
+        else
+          echo "no seed.sql to apply"
+        fi
+    volumes:
+      - ./database/initdb/seed.sql:/module/seed.sql:ro
+    # One-shot consumed via `service_completed_successfully`: it must NEVER restart, or that
+    # condition can never be satisfied.
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - timescale_network
+      - ideable_network
+  # SYNC-MANAGED-END: seed-job
+
+  # SYNC-MANAGED-BEGIN: migrations-job
+  ############################
+  #  host_app - Migrations   #
+  ############################
+  # Schema changes run here, once, before any backend serves traffic — not at import inside every
+  # uvicorn worker, which is what made the schema unevolvable and raced across workers.
+  migrations:
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.backend:${IMAGE_TAG}
+    container_name: ${APP_SLUG}.hostapp.migrations
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      # The merged compose keeps only what a service declares here — the env_file entries above
+      # are dropped when the modules are merged — and this job needs the full backend
+      # configuration, not just the database: `alembic upgrade head` imports app.models, which
+      # pulls in the application Settings, which refuses to construct without the Authentik
+      # values. A migrations job that cannot import the models cannot migrate.
+      - LOG_LEVEL=${HOSTAPP_LOG_LEVEL:-INFO}
+      # host_app's OWN database. This used to read ${AUTHENTIK_POSTGRES_HOST}, which happened to
+      # point at the same service — so separating the identity database would have silently sent
+      # host_app's migrations and API into the IDENTITY store. Named for what it is.
+      - POSTGRES_HOST=${HOSTAPP_DB_HOST:-database}
+      - POSTGRES_PORT=${HOSTAPP_DB_PORT:-5432}
+      - AUTHENTIK_JWKS_URL=http://authentik-server:9000/application/o/${APP_SLUG}/jwks/
+      - AUTHENTIK_API_URL=${AUTHENTIK_INTERNAL_URL}/api/v3
+      # NOT the bootstrap's administrative token any more. The backend reads a DEDICATED
+      # service-account token from a file the bootstrap writes, and re-reads it whenever the file
+      # changes — so rotation is a file write with no restart and no dropped request. The admin
+      # credential is no longer present in a traffic-facing process's environment.
+      - AUTHENTIK_API_TOKEN_FILE=${HOSTAPP_API_TOKEN_PATH:-/shared/hostapp-api-token}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+    working_dir: /app
+    # `python -m alembic`, not the console script: the runtime image is distroless and has no
+    # script directory on PATH. A job the stack waits on with
+    # `service_completed_successfully` must be able to start.
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      database:
+        condition: service_healthy
+    # One-shot: it must never restart, or `service_completed_successfully` can never be satisfied.
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - timescale_network
+      - ideable_network
+  # SYNC-MANAGED-END: migrations-job
+
+  backend:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.backend:${IMAGE_TAG}
+    # Replicable: NO container_name, because `${APP_SLUG}.${MODULE_SLUG}.<svc>` is a unique name and a
+    # second replica collides on it. Compose names replicas `<project>-<service>-<n>` instead, and
+    # `deploy.replicas` is honoured by `docker compose up` without Swarm (verified: 3 containers, no
+    # collision). Scripts must find these by label or service, never by a fixed name.
+    # ONE variable, so a deployment chooses explicitly between a GUARANTEED port and a scalable range.
+    #
+    #   replicas=1 (default) -> "{base}:{internal}"        the documented port, always bound
+    #   replicas>1           -> "{base}-{max}:{internal}"  a range; Compose gives each replica one of
+    #                                                      them and WHICH one is NOT deterministic
+    #
+    # That last part is why this is not simply a range by default. Measured: with the range
+    # `8001-8003` and a single replica, Compose bound **8003** and left 8001 dead — every test and
+    # every dev URL pointing at the documented port broke, silently, while the stack looked healthy.
+    # Traefik is unaffected either way: it reaches the service by DNS name and Docker returns every
+    # replica's address, so it load-balances with no configuration at all.
+    ports:
+      - "${BACKEND_PUBLISH:-8001:8001}"
+    environment:
+      - LOG_LEVEL=${HOSTAPP_LOG_LEVEL:-INFO}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
+      # host_app's OWN database. This used to read ${AUTHENTIK_POSTGRES_HOST}, which happened to
+      # point at the same service — so separating the identity database would have silently sent
+      # host_app's migrations and API into the IDENTITY store. Named for what it is.
+      - POSTGRES_HOST=${HOSTAPP_DB_HOST:-database}
+      - POSTGRES_PORT=${HOSTAPP_DB_PORT:-5432}
+      - AUTHENTIK_JWKS_URL=http://authentik-server:9000/application/o/${APP_SLUG}/jwks/
+      - AUTHENTIK_API_URL=${AUTHENTIK_INTERNAL_URL}/api/v3
+      # NOT the bootstrap's administrative token any more. The backend reads a DEDICATED
+      # service-account token from a file the bootstrap writes, and re-reads it whenever the file
+      # changes — so rotation is a file write with no restart and no dropped request. The admin
+      # credential is no longer present in a traffic-facing process's environment.
+      - AUTHENTIK_API_TOKEN_FILE=${HOSTAPP_API_TOKEN_PATH:-/shared/hostapp-api-token}
+      # Which declared accounts the authorization seed applies. The backend owns the seed (the
+      # thin-token change), so it needs the same two gates the bootstrap uses for the identity half.
+      - BOOTSTRAP_USERS_ENABLED=${BOOTSTRAP_USERS_ENABLED:-true}
+      - E2E_TEST_USERS_ENABLED=${E2E_TEST_USERS_ENABLED:-false}
+      - IDEABLE_EXECUTION_MODE=${IDEABLE_EXECUTION_MODE:-dev}
+      # Operational tunables the backend reads with os.getenv. They had code defaults and were
+      # passed by nothing, so setting them in .env.config had no effect — documented but not
+      # reachable. Passing them here is what makes the documentation true.
+      - IDENTITY_SYNC_RETRY_SECONDS=${IDENTITY_SYNC_RETRY_SECONDS:-15}
+      - IDENTITY_SYNC_RETRY_MAX_SECONDS=${IDENTITY_SYNC_RETRY_MAX_SECONDS:-300}
+      - IDENTITY_EVENTS_WINDOW_SECONDS=${IDENTITY_EVENTS_WINDOW_SECONDS:-300}
+      - IDENTITY_EVENTS_TTL_SECONDS=${IDENTITY_EVENTS_TTL_SECONDS:-60}
+    volumes:
+      - authentik_shared:/shared:ro
+      # The module authorization contracts. host_app owns the authorization model, so it
+      # seeds it from these — the bootstrap has this mount for the same reason and keeps it for the
+      # identity half. Read-only: a contract is an input, never something the runtime edits.
+      - ../../modules:/modules:ro
+    # Read-only root filesystem with a tmpfs for scratch. Prerequisites, both already in place:
+    # PYTHONDONTWRITEBYTECODE stops .pyc being written into /app -- 76 were, before it --
+    # and nothing else in the application writes to disk: logs go to stdout, state goes to Postgres.
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      database:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+      authentik-server:
+        condition: service_healthy
+      authentik-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness, not liveness: an unreachable DB must take this container out of rotation.
+      # EXEC form: a distroless runtime has no shell, so CMD-SHELL cannot run at all and the
+      # container would be permanently unhealthy.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      # Honoured by `docker compose up` without Swarm (verified: 3 containers, no name
+      # collision). 1 by default, so an unconfigured deployment behaves exactly as before.
+      replicas: ${BACKEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${BACKEND_CPU_LIMIT:-1}"
+          memory: ${BACKEND_MEM_LIMIT:-1g}
+        reservations:
+          memory: ${BACKEND_MEM_RESERVATION:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    labels:
+      - "traefik.enable=false"
+
+  ####################
+  #     Frontend     #
+  ####################
+  frontend:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.frontend:${IMAGE_TAG}
+    # Replicable: NO container_name, because `${APP_SLUG}.${MODULE_SLUG}.<svc>` is a unique name and a
+    # second replica collides on it. Compose names replicas `<project>-<service>-<n>` instead, and
+    # `deploy.replicas` is honoured by `docker compose up` without Swarm (verified: 3 containers, no
+    # collision). Scripts must find these by label or service, never by a fixed name.
+    ports:
+      # The container side is 8080: nginx-unprivileged cannot bind 80. The published
+      # host port is unchanged, so every dev URL and test still works.
+      - "${FRONTEND_PUBLISH:-3000:8080}"
+    labels:
+      # Dead configuration: Traefik runs the file provider only and never reads container labels.
+      # Kept as a single marker rather than a routing block, because the routing is in
+      # traefik/dynamic.yml.template.
+      - "ideable.routed-by=traefik-file-provider"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=${VITE_API_URL}
+      - VITE_OIDC_AUTHORITY=${VITE_OIDC_AUTHORITY}
+      - VITE_OIDC_CLIENT_ID=${VITE_OIDC_CLIENT_ID}
+      - VITE_OIDC_REDIRECT_URI=${VITE_OIDC_REDIRECT_URI}
+      - VITE_OIDC_POST_LOGOUT_REDIRECT_URI=${VITE_OIDC_POST_LOGOUT_REDIRECT_URI}
+      - VITE_APP_TITLE=${VITE_APP_TITLE}
+      - VITE_SHOW_APP_NAME_ON_HEADER=${VITE_SHOW_APP_NAME_ON_HEADER}
+    volumes:
+      - ./config:/usr/share/nginx/html/config:ro
+    # Read-only root filesystem. nginx-unprivileged keeps its pid and *_temp_path under /tmp, and
+    # docker-entrypoint.sh writes the runtime env-config there too -- which is why nginx serves it
+    # through a `location = /env-config.js` alias rather than from the html root.
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "http://127.0.0.1:8080" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      # Honoured by `docker compose up` without Swarm (verified: 3 containers, no name
+      # collision). 1 by default, so an unconfigured deployment behaves exactly as before.
+      replicas: ${FRONTEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPU_LIMIT:-0.5}"
+          memory: ${FRONTEND_MEM_LIMIT:-256m}
+        reservations:
+          memory: ${FRONTEND_MEM_RESERVATION:-64m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  ####################
+  #    Authentik     #
+  ####################
+  # The identity plane has its OWN database, on purpose. Sharing the application Postgres meant login,
+  # refresh and session traffic competed with application queries for the same connections and the same
+  # buffer pool — measured before that change: 10 of the instance's connections were Authentik's against
+  # the application's 5, out of max_connections=100. Worse, an application-side database problem also
+  # stopped anyone logging in to fix it.
+  #
+  # Since Authentik 2025.10 this instance holds *all* identity state — sessions, cache, the task queue
+  # and WebSocket channels (`authentik_core_session`, `django_postgres_cache_cacheentry`,
+  # `authentik_tasks_*`, `django_channels_postgres_*`). There is no cache tier: it IS the shared store
+  # that makes replicating the server safe, and it is the identity plane's single point of failure.
+  # Size it accordingly, and see docs/RUNBOOK.md § "Identity database restore" for the RTO.
+  authentik-database:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: postgres:${AUTHENTIK_POSTGRES_VERSION:-16-alpine}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-database
+    # Stated, not inherited. Carrying cache + sessions + tasks + channels costs roughly 50% more
+    # connections than a pre-2025.10 install, and every added server/worker replica brings its own set:
+    # MEASURED 11 client connections for one server + one worker. The default `max_connections=100` was
+    # chosen when part of that load sat in a cache, so it is set here to a number with a formula behind
+    # it — ~15 per server+worker replica pair, plus ~20 for the bootstrap, operators and a restore.
+    command:
+      - postgres
+      - -c
+      - max_connections=${AUTHENTIK_POSTGRES_MAX_CONNECTIONS:-200}
+    environment:
+      - POSTGRES_PASSWORD=${AUTHENTIK_POSTGRES_PASSWORD}
+      - POSTGRES_USER=${AUTHENTIK_POSTGRES_USER}
+      - POSTGRES_DB=${AUTHENTIK_POSTGRES_DB}
+    ports:
+      # Loopback only. Published at all solely so a restore can be driven from the host — see
+      # docs/RUNBOOK.md § "Identity database restore".
+      - "${AUTHENTIK_POSTGRES_BIND:-127.0.0.1}:${AUTHENTIK_POSTGRES_PUBLISHED_PORT:-5435}:5432"
+    networks:
+      - ideable_network
+    volumes:
+      - authentik_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${AUTHENTIK_POSTGRES_USER} -d ${AUTHENTIK_POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${AUTHENTIK_DATABASE_CPU_LIMIT:-1}"
+          memory: ${AUTHENTIK_DATABASE_MEM_LIMIT:-1g}
+        reservations:
+          memory: ${AUTHENTIK_DATABASE_MEM_RESERVATION:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  authentik-server:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    # Replicable: no container_name (a unique name blocks the second replica). Replication is safe
+    # because this process is STATELESS: since 2025.10 Authentik keeps sessions, cache, the task queue
+    # and WebSocket state in Postgres (`authentik_core_session`, `django_postgres_cache_cacheentry`,
+    # `authentik_tasks_*`, `django_channels_postgres_*`), so any replica can serve any user's next
+    # request. The shared store is `authentik-database` above — there is no cache tier to add, and
+    # adding one back would not make this safer. See docs/RUNBOOK.md § "Identity plane".
+    command: server
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      # Its OWN database service — never the application's.
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRESQL__PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_LISTEN__HTTP: 0.0.0.0:9000
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      HOSTAPP_API_TOKEN_PATH: ${HOSTAPP_API_TOKEN_PATH:-/shared/hostapp-api-token}
+      # Environment variables for blueprint substitution
+      EXTERNAL_BASE_HOST: ${EXTERNAL_BASE_HOST}
+      APP_NAME: ${APP_NAME}
+    volumes:
+      # Mount blueprints directory for automatic configuration
+      - ./authentik/blueprints:/blueprints/custom:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    ports:
+      # One variable per port, holding the whole compose spec — the same pattern the replicable
+      # backends use. The default is the exact fixed port because the test suite and every
+      # dev URL point at :9000; widening it to a range (e.g. `9000-9001:9000`) is what allows a second
+      # replica, at the cost of the base port no longer being guaranteed. Traefik does not use these
+      # ports at all: it reaches `authentik-server` by DNS name and Docker returns every live replica.
+      - "${AUTHENTIK_PUBLISH_HTTP:-9000:9000}"
+      - "${AUTHENTIK_PUBLISH_HTTPS:-9443:9443}"
+    depends_on:
+      authentik-database:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/api/v3/root/config/')\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      replicas: ${AUTHENTIK_SERVER_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${AUTHENTIK_SERVER_CPU_LIMIT:-2}"
+          memory: ${AUTHENTIK_SERVER_MEM_LIMIT:-2g}
+        reservations:
+          memory: ${AUTHENTIK_SERVER_MEM_RESERVATION:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  authentik-bootstrap:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.authentik-bootstrap:${IMAGE_TAG}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-bootstrap
+    working_dir: /bootstrap
+    volumes:
+      - ./authentik/blueprints:/bootstrap/assets/blueprints:rw
+      - ./config:/bootstrap/config:ro
+      - authentik_shared:/shared
+      - ../../modules:/modules:ro
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    environment:
+      AUTHENTIK_URL: "${AUTHENTIK_INTERNAL_URL}"
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      HOSTAPP_ROOT: /modules/host_app
+      # The gid the backend runs as, so the API token it writes is readable there. Must match
+      # the distroless runtime's built-in non-root user.
+      HOSTAPP_API_TOKEN_GID: ${HOSTAPP_API_TOKEN_GID:-65532}
+
+      # Configurazione applicazione
+      APP_NAME: ${APP_NAME}
+      APP_SLUG: ${APP_SLUG}
+      APP_URL: https://${EXTERNAL_BASE_HOST}
+      APP_CALLBACK_URL: https://${EXTERNAL_BASE_HOST}/auth/callback
+      CLIENT_ID: ${CLIENT_ID}
+      CLIENT_SECRET: ${CLIENT_SECRET}
+      # Confidential service-account client used for service-to-service calls and
+      # backend integration tests (client_credentials grant). Without this, the
+      # bootstrap skips creating the service-account provider ({APP_SLUG}-svc).
+      SERVICE_CLIENT_ID: ${SERVICE_CLIENT_ID:-}
+      SERVICE_CLIENT_SECRET: ${SERVICE_CLIENT_SECRET:-}
+
+      # PostgreSQL access for token upsert pre-flight
+      AUTHENTIK_POSTGRES_HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRES_PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRES_USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRES_DB: ${AUTHENTIK_POSTGRES_DB}
+
+      # Federation. Empty FEDERATION_KIND = local accounts only, which is the
+      # default and changes nothing. Set it to oidc, saml or ldap to delegate authentication to
+      # the customer's IdP; authorization stays in host_app, mapped from the directory groups the
+      # source delivers.
+      FEDERATION_KIND: ${FEDERATION_KIND:-}
+      FEDERATION_NAME: ${FEDERATION_NAME:-Corporate directory}
+      FEDERATION_SLUG: ${FEDERATION_SLUG:-corporate}
+      FEDERATION_CLIENT_ID: ${FEDERATION_CLIENT_ID:-}
+      FEDERATION_CLIENT_SECRET: ${FEDERATION_CLIENT_SECRET:-}
+      FEDERATION_OIDC_WELL_KNOWN: ${FEDERATION_OIDC_WELL_KNOWN:-}
+      FEDERATION_SAML_SSO_URL: ${FEDERATION_SAML_SSO_URL:-}
+      FEDERATION_SAML_ISSUER: ${FEDERATION_SAML_ISSUER:-}
+      FEDERATION_LDAP_SERVER_URI: ${FEDERATION_LDAP_SERVER_URI:-}
+      FEDERATION_LDAP_BIND_CN: ${FEDERATION_LDAP_BIND_CN:-}
+      FEDERATION_LDAP_BIND_PASSWORD: ${FEDERATION_LDAP_BIND_PASSWORD:-}
+      FEDERATION_LDAP_BASE_DN: ${FEDERATION_LDAP_BASE_DN:-}
+      FEDERATION_LDAP_DELETE_NOT_FOUND: ${FEDERATION_LDAP_DELETE_NOT_FOUND:-true}
+
+      # Self-registration, for deployments with no IdP. Off by default: an open
+      # registration flow on a system that did not ask for one is a security regression.
+      SELF_REGISTRATION_ENABLED: ${SELF_REGISTRATION_ENABLED:-false}
+
+      # E2E test accounts (config/test-users.yaml). Off by default, and refused outright when
+      # IDEABLE_EXECUTION_MODE=prod -- these have a known password and must never reach production.
+      E2E_TEST_USERS_ENABLED: ${E2E_TEST_USERS_ENABLED:-false}
+      E2E_TEST_PASSWORD: ${E2E_TEST_PASSWORD:-}
+      IDEABLE_EXECUTION_MODE: ${IDEABLE_EXECUTION_MODE:-dev}
+      BOOTSTRAP_USERS_ENABLED: ${BOOTSTRAP_USERS_ENABLED:-true}
+    # One-shot provisioning job consumed via `service_completed_successfully`: it must NEVER
+    # restart, or that condition can never be satisfied.
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  authentik-worker:
+    env_file:
+      - .env.config
+      - .env.secrets
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.authentik-worker
+    command: worker
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      # Its OWN database service — never the application's.
+      AUTHENTIK_POSTGRESQL__HOST: ${AUTHENTIK_POSTGRES_HOST}
+      AUTHENTIK_POSTGRESQL__PORT: ${AUTHENTIK_POSTGRES_PORT}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_LOG_LEVEL: info
+    networks:
+      - timescale_network
+      - ideable_network
+    # NOT root. See docs/RUNBOOK.md § "Identity plane" for the uid and why the media volume is
+    # chowned at build time instead of the worker running privileged.
+    user: "${AUTHENTIK_WORKER_UID:-1000}"
+    depends_on:
+      authentik-database:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      # Sized to EVENT load, not request load: the worker drains a queue.
+      replicas: ${AUTHENTIK_WORKER_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${AUTHENTIK_WORKER_CPU_LIMIT:-2}"
+          memory: ${AUTHENTIK_WORKER_MEM_LIMIT:-2g}
+        reservations:
+          memory: ${AUTHENTIK_WORKER_MEM_RESERVATION:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  ####################
+  #     Traefik       #
+  ####################
+  traefik:
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      - EXTERNAL_BASE_HOST=${EXTERNAL_BASE_HOST}
+      - ACME_EMAIL=${ACME_EMAIL}
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.traefik:${IMAGE_TAG}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.traefik
+    command:
+      - "--configfile=/etc/traefik/traefik.yml"
+      # DEBUG floods the disk in production — keep INFO unless actively debugging routing.
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+      - "--accesslog=true"
+    # STILL root, and this is the documented reason (the identity-plane split criterion allows it): Traefik binds
+    # :80 and :443 — privileged ports — and it owns `acme.json`, a BIND-MOUNTED file whose ownership
+    # comes from the host. Running as a fixed uid needs both NET_BIND_SERVICE and a host-side chown
+    # that matches, and getting the uid wrong makes ACME renewal fail SILENTLY until a certificate
+    # expires. The real blast-radius problem here was the Docker socket — root plus a mounted socket is
+    # host root — and that mount was removed in the horizontal-scale work (verified: 0 socket mounts). Revisit together
+    # with the redundant-edge work, where TLS moves off this container entirely.
+    user: root
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+      - "${TRAEFIK_DASHBOARD_PORT:-8088}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # /var/run/docker.sock is deliberately NOT mounted. Only the FILE provider is configured
+      # (traefik.yml.template), so the socket was never read for routing — while granting read access
+      # to it is root-equivalent on the host, and it forced Traefik to sit on the same host as the
+      # containers it routes to. Removing it drops both the privilege and the co-location constraint.
+      - ./traefik/dynamic.yml.template:/etc/traefik/dynamic.yml.template:ro
+      - ./traefik/acme.json:/etc/traefik/acme.json
+    networks:
+      - timescale_network
+      - ideable_network
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${TRAEFIK_CPU_LIMIT:-1}"
+          memory: ${TRAEFIK_MEM_LIMIT:-512m}
+        reservations:
+          memory: ${TRAEFIK_MEM_RESERVATION:-128m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+volumes:
+  # Separate from the application's volume so the identity store can be backed up, restored and
+  # sized on its own — see docs/RUNBOOK.md § "Identity database restore".
+  authentik_pgdata:
+    name: ${APP_SLUG}_authentik_pgdata
+  timescale_data_v4:
+    name: ${APP_SLUG}_timescale_data_v4
+  authentik_shared:
+  authentik:

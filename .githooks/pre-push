@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Refuse a push whose code was never tested green.
+#
+# On 2026-08-26 a commit was merged and pushed while the runner had exited 1 and printed
+# "❌ FAILED — 1 failed". The signal was correct and unread. That is not a lapse a person can be
+# relied upon to prevent about themselves, which is the whole argument for a hook: the check that
+# matters is the one that runs whether or not anyone remembers it.
+#
+# The rule: the most recent TEST_REPORTS summary must say PASSED **and** cover the code being
+# pushed, with a clean tree. A green run of different code proves nothing about this one.
+#
+# "Covers the code" is a question about the TREE, not about the commit id, and the difference is
+# what makes this gate usable. Delivering a plan produces a new commit no report can name — the
+# report was written before the commit existed — while its tree is, for a conflict-free delivery
+# onto an unmoved target, byte-for-byte the tree that was tested (measured: 8 of 8 recent plan
+# deliveries, IDENTICAL). Matching on the commit id rejected every one of those, and the only way
+# past was SKIP_TEST_GATE=1 on the single push that reaches the shared branch — which is how a gate
+# stops meaning anything.
+#
+# So three acceptances, narrowing from strongest to weakest, and nothing beyond them:
+#   1. the report names HEAD;
+#   2. the report's commit has the SAME TREE as HEAD — the same code, under a different commit;
+#   3. the trees differ ONLY under bookkeeping paths — what a delivery and the run itself rewrite
+#      after the suite — AND the checks that read those files pass against HEAD;
+#   4. the trees differ ONLY under documentation — what the `Documenting` node edits, by design
+#      after a green Testing — AND the whole framework suite passes against HEAD.
+# Anything else is refused, including a target branch that has moved: that combination was never
+# tested, and the hook has no business guessing that it would have passed.
+#
+# Deliberate override:  SKIP_TEST_GATE=1 git push …
+set -uo pipefail
+
+REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$REPO" || exit 0
+
+if [[ "${SKIP_TEST_GATE:-0}" == "1" ]]; then
+  echo "[pre-push] SKIP_TEST_GATE=1 — pushing without a verified green run." >&2
+  exit 0
+fi
+
+SUMMARY="$(ls -t TEST_REPORTS/*-SUMMARY.md 2>/dev/null | head -1)"
+if [[ -z "$SUMMARY" ]]; then
+  echo "[pre-push] No TEST_REPORTS summary found. Run ./scripts/common/run_enabled_tests.sh first," >&2
+  echo "           or push with SKIP_TEST_GATE=1 if you mean to." >&2
+  exit 1
+fi
+
+HEAD_SHA="$(git rev-parse HEAD)"
+TREE="$(git status --porcelain)"
+REC_SHA="$(grep -oE '^- Commit: `[0-9a-f]+`' "$SUMMARY" | grep -oE '[0-9a-f]{7,}' | head -1)"
+REC_TREE="$(grep -oE '^- Working tree: `[a-z]+`' "$SUMMARY" | grep -oE 'clean|dirty' | head -1)"
+
+fail() { echo "[pre-push] $*" >&2; echo "[pre-push]   summary: $SUMMARY" >&2;
+         echo "[pre-push]   override deliberately: SKIP_TEST_GATE=1 git push …" >&2; exit 1; }
+
+grep -q "Overall: ✅ PASSED" "$SUMMARY" \
+  || fail "the most recent test run did NOT pass. Fix it before pushing."
+
+[[ -n "$REC_SHA" ]] \
+  || fail "that run predates commit recording, so it cannot be tied to this code. Re-run the suite."
+
+#: Paths written AFTER the suite has run — by the run itself, or by the delivery: the reports the
+#: runner emits, the plan re-stamped to (Merged), and the kanban card moved into done/.
+#:
+#: `TEST_REPORTS/` belongs here for a reason worth stating plainly. The runner records the commit it
+#: tested and THEN writes the summary, so committing that summary necessarily moves HEAD past the
+#: commit the report names. Leaving it out made the gate refuse on a difference the gate's own
+#: mechanism creates: the first real plan delivery was rejected over 12 differing paths, 9 of them
+#: reports from the very run being cited. Nothing executes a report, so accepting one costs no
+#: coverage.
+#:
+#: They are bookkeeping, but they are not UNTESTED bookkeeping — three checks read the plan files,
+#: so clause 3 re-runs exactly those rather than waving the paths through.
+BOOKKEEPING_PATHS='^(implementation-plans/|kanban/|TEST_REPORTS/)'
+BOOKKEEPING_TESTS=(
+  scripts/TESTS/test_plan_status_is_true.py
+  scripts/TESTS/test_plan_branch_has_a_plan.py
+  scripts/TESTS/test_process_rules_are_checked.py
+)
+
+tree_of() { git rev-parse --quiet --verify "$1^{tree}" 2>/dev/null; }
+
+bookkeeping_only() {
+  # True when every path differing between the tested commit and HEAD is bookkeeping.
+  local changed
+  changed="$(git diff --name-only "$1" "$2" 2>/dev/null)" || return 1
+  [[ -n "$changed" ]] || return 1
+  ! grep -qvE "$BOOKKEEPING_PATHS" <<<"$changed"
+}
+
+#: Whether this project HAS the framework suite at all.
+#:
+#: It does not in a remote module project: the push flow ships `scripts/{common,module_only,runtime,dev}`
+#: and deliberately not `scripts/TESTS`, which is the maintainer's. The two clauses below verify
+#: themselves by running tests from there, so in a remote both would run pytest against paths that
+#: do not exist, read the error as a failure, and REFUSE a legitimate push — the mirror image of
+#: the defect that brought this hook to remotes in the first place.
+#:
+#: So the verdict has three values, not two: verified, refused, or NOT RUN. `rules/implementation-plan.md`
+#: § *Documenting* already settles which is right — "a check that cannot fail must never report
+#: success", so a check that could not run says exactly that and does not pretend either way. The
+#: clause is still allowed: the code being pushed is byte-identical to a green run outside these
+#: paths, which is what the clause was ever about.
+#:
+#: Exit codes: 0 verified, 1 ran and failed, 2 could not run here.
+_NOT_RUN=2
+
+framework_suite_present() {
+  [[ -d scripts/TESTS ]]
+}
+
+bookkeeping_checks_pass() {
+  local runner="scripts/dev/tool.sh"
+  framework_suite_present || return $_NOT_RUN
+  # `scripts/TESTS` exists, so this project CAN check itself and a missing runner is a broken
+  # toolchain, not an absent one. That refuses, and deliberately does not degrade to NOT RUN:
+  # the two look identical from here and only one of them is legitimate.
+  [[ -x "$runner" ]] || return 1
+  IDEABLE_UNRECORDED_RUN=1 "$runner" pytest -q "${BOOKKEEPING_TESTS[@]}" >/dev/null 2>&1
+}
+
+#: Documentation: the files the `Documenting` node edits. It runs AFTER a green `Testing`, by
+#: design — docs are aligned to what has already been built and tested — so its edits are never
+#: covered by the recorded run, and the trees differ here on every plan that touches a document,
+#: which is most of them. Before this clause the only way through was re-running the whole suite by
+#: hand.
+#:
+#: Docs are not waved through: several tests READ these files, and one of them found seven stale
+#: documents the day it was written. So the whole framework suite is re-run against HEAD — not a
+#: curated list, because a curated list is one more thing that silently stops being complete the
+#: next time someone adds a doc test.
+DOC_PATHS='(^|/)[^/]+\.md$|^rules/|^\.agents/|/SPECS/'
+
+docs_only() {
+  local changed
+  changed="$(git diff --name-only "$1" "$2" 2>/dev/null)" || return 1
+  [[ -n "$changed" ]] || return 1
+  ! grep -qvE "$BOOKKEEPING_PATHS|$DOC_PATHS" <<<"$changed"
+}
+
+framework_suite_passes() {
+  local runner="scripts/dev/tool.sh"
+  framework_suite_present || return $_NOT_RUN
+  [[ -x "$runner" ]] || return 1   # see bookkeeping_checks_pass: broken, not absent
+  IDEABLE_UNRECORDED_RUN=1 "$runner" pytest -q scripts/TESTS >/dev/null 2>&1
+}
+
+if [[ "$REC_SHA" != "$HEAD_SHA" ]]; then
+  REC_TREE_SHA="$(tree_of "$REC_SHA")"
+  HEAD_TREE_SHA="$(tree_of "$HEAD_SHA")"
+
+  if [[ -n "$REC_TREE_SHA" && "$REC_TREE_SHA" == "$HEAD_TREE_SHA" ]]; then
+    echo "[pre-push] commit ${HEAD_SHA:0:12} differs from the tested ${REC_SHA:0:12}, but their" >&2
+    echo "[pre-push] trees are identical — the green run covered this code byte for byte." >&2
+  elif bookkeeping_only "$REC_SHA" "$HEAD_SHA"; then
+    bookkeeping_checks_pass; _verdict=$?
+    if [[ $_verdict -eq 0 ]]; then
+      echo "[pre-push] the only difference from the tested ${REC_SHA:0:12} is plan/kanban" >&2
+      echo "[pre-push] bookkeeping, and the checks that read it pass against HEAD." >&2
+    elif [[ $_verdict -eq $_NOT_RUN ]]; then
+      echo "[pre-push] the only difference from the tested ${REC_SHA:0:12} is plan/kanban" >&2
+      echo "[pre-push] bookkeeping. The checks that read those files DID NOT RUN — they live in" >&2
+      echo "[pre-push] scripts/TESTS, which is the maintainer's and is not part of this project." >&2
+      echo "[pre-push] Allowing the push: the code outside those paths is the code that was tested." >&2
+    else
+      fail "only plan/kanban bookkeeping differs from the tested ${REC_SHA:0:12}, but the checks that read those files FAIL against HEAD."
+    fi
+  elif docs_only "$REC_SHA" "$HEAD_SHA"; then
+    echo "[pre-push] the only difference from the tested ${REC_SHA:0:12} is documentation" >&2
+    echo "[pre-push] (the Documenting step runs after Testing) — re-running the framework suite…" >&2
+    framework_suite_passes; _verdict=$?
+    if [[ $_verdict -eq 0 ]]; then
+      echo "[pre-push] framework suite green against HEAD; the documentation is verified." >&2
+    elif [[ $_verdict -eq $_NOT_RUN ]]; then
+      echo "[pre-push] framework suite DID NOT RUN — scripts/TESTS is the maintainer's and is not" >&2
+      echo "[pre-push] part of this project, so the documentation is UNVERIFIED here, not verified." >&2
+      echo "[pre-push] Allowing the push: the code outside documentation is the code that was tested." >&2
+    else
+      fail "only documentation differs from the tested ${REC_SHA:0:12}, but the framework suite FAILS against HEAD."
+    fi
+  else
+    fail "the green run was for commit ${REC_SHA:0:12}, but HEAD is ${HEAD_SHA:0:12} with a different tree. Re-run the suite."
+  fi
+fi
+
+if [[ -n "$TREE" && "$REC_TREE" != "dirty" ]]; then
+  fail "the working tree has uncommitted changes that the green run did not include."
+fi
+
+echo "[pre-push] verified: green run covering ${HEAD_SHA:0:12} ($REC_TREE tree)"
+exit 0

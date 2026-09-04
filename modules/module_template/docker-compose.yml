@@ -1,0 +1,345 @@
+services:
+
+  # SYNC-MANAGED-BEGIN: bootstrap-service
+  ##########################################
+  #   template - Seed data + app DB role   #
+  ##########################################
+  # This job owns exactly two things, and Alembic owns every CREATE/ALTER/DROP of a schema object:
+  #   1. ROWS — the seed a clean installation needs to be functionally consistent, mounted rather
+  #      than baked, plus the audit epoch.
+  #   2. The application LOGIN ROLE and its privileges — a cluster object carrying a deployment
+  #      secret, which must exist after the last migration and before the backend's first
+  #      connection. This is the ONLY place it is created; an initdb script would run only on an
+  #      empty PGDATA and so would skip every database that has ever been deployed. See
+  #      database/SPECS/ideable-framework-specs/schema-workflow.md § The application role.
+  #
+  # It runs on EVERY deploy, with no ledger guard. seed.sql must be idempotent, and both writes
+  # below already are, so a "did this already run?" check buys nothing — while costing the
+  # order-dependent trap that bit the audit-correctness work: `template_datamodel_v1` was recorded, so a block that
+  # needed to run never did, and module_runtime_meta was missing at deploy time.
+  # `module_bootstrap_execution` stays, reserved for genuinely non-idempotent one-shots.
+  #
+  # In production this seed is effectively inert — a real deployment starts from a restored
+  # backup, where every row it would insert already exists.
+  template-bootstrap:
+    image: postgres:16-alpine
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.bootstrap
+    environment:
+      - TEMPLATE_ENTITIES_DB_HOST=${TEMPLATE_ENTITIES_DB_HOST}
+      - TEMPLATE_ENTITIES_DB_PORT=${TEMPLATE_ENTITIES_DB_PORT}
+      - TEMPLATE_ENTITIES_DB_NAME=${TEMPLATE_ENTITIES_DB_NAME}
+      - TEMPLATE_ENTITIES_DB_USER=${TEMPLATE_ENTITIES_DB_USER}
+      - TEMPLATE_ENTITIES_DB_PASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+      - PGPASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+      - TEMPLATE_APP_DB_USER=${TEMPLATE_APP_DB_USER}
+      - TEMPLATE_APP_DB_PASSWORD=${TEMPLATE_APP_DB_PASSWORD}
+    # Cross-module ordering (host_app's database + authentik-bootstrap) is GENERATED from
+    # module.json `dependsOn` by scripts/common/compose_deps.py. Do not hand-code it here.
+    depends_on:
+      template-migrations:
+        condition: service_completed_successfully
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+
+        until pg_isready -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}"; do
+          sleep 2
+        done
+
+        # The reference instant for synthetic audit-creation rows: written once, so every worker
+        # and every redeploy report the same creation timestamp for the same record.
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" -c "INSERT INTO module_runtime_meta (key, value) VALUES ('system_epoch', NOW()) ON CONFLICT (key) DO NOTHING;"
+
+        if [ -s /module/seed.sql ]; then
+          PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" psql -v ON_ERROR_STOP=1 -h "${TEMPLATE_ENTITIES_DB_HOST}" -p "${TEMPLATE_ENTITIES_DB_PORT}" -U "${TEMPLATE_ENTITIES_DB_USER}" -d "${TEMPLATE_ENTITIES_DB_NAME}" -f /module/seed.sql
+          echo "seed.sql applied"
+        else
+          echo "no seed.sql to apply"
+        fi
+
+        # The application must NOT connect as the database owner: that role is a superuser, and
+        # superusers bypass Row-Level Security unconditionally — RLS was enabled, forced, and
+        # entirely decorative until this role existed. Verified: as the owner, a session set to
+        # tenant 1 still returned tenant 2's rows.
+        PSQL="psql -v ON_ERROR_STOP=1 -h ${TEMPLATE_ENTITIES_DB_HOST} -p ${TEMPLATE_ENTITIES_DB_PORT} -U ${TEMPLATE_ENTITIES_DB_USER} -d ${TEMPLATE_ENTITIES_DB_NAME}"
+        role_exists=$$(PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -tA -c "SELECT 1 FROM pg_roles WHERE rolname='${TEMPLATE_APP_DB_USER}';")
+        if [ "$$role_exists" != "1" ]; then
+          PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "CREATE ROLE ${TEMPLATE_APP_DB_USER} LOGIN PASSWORD '${TEMPLATE_APP_DB_PASSWORD}' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;"
+        else
+          PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "ALTER ROLE ${TEMPLATE_APP_DB_USER} LOGIN PASSWORD '${TEMPLATE_APP_DB_PASSWORD}' NOSUPERUSER NOBYPASSRLS;"
+        fi
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "GRANT USAGE ON SCHEMA public TO ${TEMPLATE_APP_DB_USER};"
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${TEMPLATE_APP_DB_USER};"
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${TEMPLATE_APP_DB_USER};"
+        # Tables future migrations create must be reachable without re-running grants.
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${TEMPLATE_APP_DB_USER};"
+        PGPASSWORD="${TEMPLATE_ENTITIES_DB_PASSWORD}" $$PSQL -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${TEMPLATE_APP_DB_USER};"
+
+        if [ ! -s /module/authorization.yaml ]; then
+          echo "authorization.yaml is missing or empty" >&2
+          exit 1
+        fi
+
+        echo "authorization.yaml loaded from module-level config"
+    volumes:
+      - ./config/authorization.yaml:/module/authorization.yaml:ro
+      - ./database/initdb/seed.sql:/module/seed.sql:ro
+    # One-shot consumed via `service_completed_successfully`: it must NEVER restart, or that
+    # condition can never be satisfied.
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - ideable_network
+  # SYNC-MANAGED-END: bootstrap-service
+
+  # SYNC-MANAGED-BEGIN: database-service
+  ############################
+  #   template - Database    #
+  ############################
+  template-database:
+    image: timescale/timescaledb:${TIMESCALEDB_VERSION}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.database
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      - POSTGRES_DB=${TEMPLATE_ENTITIES_DB_NAME}
+      - POSTGRES_USER=${TEMPLATE_ENTITIES_DB_USER}
+      - POSTGRES_PASSWORD=${TEMPLATE_ENTITIES_DB_PASSWORD}
+    ports:
+      # Bound to loopback by default: the DB must not be reachable from outside the host.
+      # Set TEMPLATE_POSTGRES_BIND=0.0.0.0 to publish on all interfaces (not recommended).
+      - "${TEMPLATE_POSTGRES_BIND:-127.0.0.1}:${TEMPLATE_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - template_database_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPLATE_ENTITIES_DB_USER} -d ${TEMPLATE_ENTITIES_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    stop_grace_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "${TEMPLATE_DATABASE_CPU_LIMIT:-1}"
+          memory: ${TEMPLATE_DATABASE_MEM_LIMIT:-1g}
+        reservations:
+          memory: ${TEMPLATE_DATABASE_MEM_RESERVATION:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - ideable_network
+  # SYNC-MANAGED-END: database-service
+
+  # SYNC-MANAGED-BEGIN: migrations-job
+  ############################
+  #   template - Migrations  #
+  ############################
+  # Schema changes run here, once, before any backend serves traffic — not at import inside every
+  # uvicorn worker, which is what made the schema unevolvable and raced across workers.
+  template-migrations:
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.backend:${IMAGE_TAG}
+    container_name: ${APP_SLUG}.${MODULE_SLUG}.migrations
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      # The merged compose keeps only what a service declares here — the env_file entries above
+      # are dropped when the modules are merged — so this job must name every variable
+      # `alembic upgrade head` needs. It imports app.database, which now constructs the application
+      # Settings, and Settings refuses to build without AUTHENTIK_JWKS_URL: a migrations job that
+      # cannot import the models cannot migrate.
+      - LOG_LEVEL=${TEMPLATE_LOG_LEVEL:-INFO}
+      - DATABASE_URL=postgresql://${TEMPLATE_ENTITIES_DB_USER}:${TEMPLATE_ENTITIES_DB_PASSWORD}@${TEMPLATE_ENTITIES_DB_HOST}:${TEMPLATE_ENTITIES_DB_PORT}/${TEMPLATE_ENTITIES_DB_NAME}
+      - AUTHENTIK_JWKS_URL=${AUTHENTIK_JWKS_URL}
+    working_dir: /app
+    # `python -m alembic`, not the console script: the runtime image is distroless and has no
+    # script directory on PATH. A job the stack waits on with
+    # `service_completed_successfully` must be able to start.
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      template-database:
+        condition: service_healthy
+    # One-shot: it must never restart, or `service_completed_successfully` can never be satisfied.
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    networks:
+      - ideable_network
+  # SYNC-MANAGED-END: migrations-job
+
+  # SYNC-MANAGED-BEGIN: backend-service
+  ############################
+  #   template - Backend     #
+  ############################
+  template-backend:
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.backend:${IMAGE_TAG}
+    # Replicable: NO container_name, because `${APP_SLUG}.${MODULE_SLUG}.<svc>` is a unique name and a
+    # second replica collides on it. Compose names replicas `<project>-<service>-<n>` instead, and
+    # `deploy.replicas` is honoured by `docker compose up` without Swarm (verified: 3 containers, no
+    # collision). Scripts must find these by label or service, never by a fixed name.
+    env_file:
+      - .env.config
+      - .env.secrets
+    # ONE variable, so a deployment chooses explicitly between a GUARANTEED port and a scalable range.
+    #
+    #   replicas=1 (default) -> "{base}:{internal}"        the documented port, always bound
+    #   replicas>1           -> "{base}-{max}:{internal}"  a range; Compose gives each replica one of
+    #                                                      them and WHICH one is NOT deterministic
+    #
+    # That last part is why this is not simply a range by default. Measured: with the range
+    # `8001-8003` and a single replica, Compose bound **8003** and left 8001 dead — every test and
+    # every dev URL pointing at the documented port broke, silently, while the stack looked healthy.
+    # Traefik is unaffected either way: it reaches the service by DNS name and Docker returns every
+    # replica's address, so it load-balances with no configuration at all.
+    ports:
+      - "${TEMPLATE_BACKEND_PUBLISH:-8002:8002}"
+    environment:
+      - LOG_LEVEL=${TEMPLATE_LOG_LEVEL:-INFO}
+      # The restricted, NOBYPASSRLS role — not the owner. RLS cannot constrain a superuser.
+      - DATABASE_URL=postgresql://${TEMPLATE_APP_DB_USER}:${TEMPLATE_APP_DB_PASSWORD}@${TEMPLATE_ENTITIES_DB_HOST}:${TEMPLATE_ENTITIES_DB_PORT}/${TEMPLATE_ENTITIES_DB_NAME}
+      - AUTHENTIK_JWKS_URL=${AUTHENTIK_JWKS_URL}
+      - HOSTAPP_API_URL=${HOSTAPP_API_URL}
+      # Tunables the backend reads with os.getenv. Slugged outside, generic inside, the same way
+      # LOG_LEVEL is mapped: a bare name in the merged .env.config belongs to host_app.
+      - MAX_PAGE_SIZE=${TEMPLATE_MAX_PAGE_SIZE:-200}
+      - EXACT_COUNT_THRESHOLD=${TEMPLATE_EXACT_COUNT_THRESHOLD:-50000}
+      - PERMISSION_CACHE_TTL_SECONDS=${TEMPLATE_PERMISSION_CACHE_TTL_SECONDS:-60}
+    depends_on:
+      template-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness, not liveness: an unreachable DB must take this container out of rotation.
+      # EXEC form: a distroless runtime has no shell, so CMD-SHELL cannot run at all and the
+      # container would be permanently unhealthy.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      # Honoured by `docker compose up` without Swarm (verified: 3 containers, no name
+      # collision). 1 by default, so an unconfigured deployment behaves exactly as before.
+      replicas: ${TEMPLATE_BACKEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${TEMPLATE_BACKEND_CPU_LIMIT:-1}"
+          memory: ${TEMPLATE_BACKEND_MEM_LIMIT:-1g}
+        reservations:
+          memory: ${TEMPLATE_BACKEND_MEM_RESERVATION:-256m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    # Read-only root filesystem with a tmpfs for scratch. Prerequisites, both already in place:
+    # PYTHONDONTWRITEBYTECODE stops .pyc being written into /app -- 76 were, before it --
+    # and nothing else in the application writes to disk: logs go to stdout, state goes to Postgres.
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - ideable_network
+  # SYNC-MANAGED-END: backend-service
+
+  # SYNC-MANAGED-BEGIN: frontend-service
+  ############################
+  #   template - Frontend    #
+  ############################
+  template-frontend:
+    image: ${MODULE_DOCKER_REGISTRY_PREFIX}/${MODULE_SLUG}.frontend:${IMAGE_TAG}
+    # Replicable: NO container_name, because `${APP_SLUG}.${MODULE_SLUG}.<svc>` is a unique name and a
+    # second replica collides on it. Compose names replicas `<project>-<service>-<n>` instead, and
+    # `deploy.replicas` is honoured by `docker compose up` without Swarm (verified: 3 containers, no
+    # collision). Scripts must find these by label or service, never by a fixed name.
+    env_file:
+      - .env.config
+      - .env.secrets
+    environment:
+      - NODE_ENV=production
+    ports:
+      # The container side is 8080: nginx-unprivileged cannot bind 80. The published
+      # host port is unchanged, so every dev URL and test still works.
+      - "${TEMPLATE_FRONTEND_PUBLISH:-3001:8080}"
+    volumes:
+      - ./config/menu_definition.json:/usr/share/nginx/html/menu_definition.json:ro
+      # Runtime Look & Feel override, editable live in the deployed folder (no image rebuild).
+      - ./config/theme-override.css:/usr/share/nginx/html/config/theme-override.css:ro
+    # NO traefik.* labels. Traefik is configured with the FILE provider only (see
+    # host_app/traefik/SOURCES/traefik.yml.template), so container labels were never read — this
+    # block described the routing while `traefik/dynamic.yml.template` actually performed it, which
+    # is two sources of truth where one of them does nothing. Routing for this module lives in
+    # dynamic.yml.template under `template-remotes-template`.
+    depends_on:
+      template-backend:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "http://127.0.0.1:8080" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      # Honoured by `docker compose up` without Swarm (verified: 3 containers, no name
+      # collision). 1 by default, so an unconfigured deployment behaves exactly as before.
+      replicas: ${TEMPLATE_FRONTEND_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "${TEMPLATE_FRONTEND_CPU_LIMIT:-0.5}"
+          memory: ${TEMPLATE_FRONTEND_MEM_LIMIT:-256m}
+        reservations:
+          memory: ${TEMPLATE_FRONTEND_MEM_RESERVATION:-64m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+    # Read-only root filesystem. nginx-unprivileged keeps its pid and *_temp_path under /tmp, and
+    # docker-entrypoint.sh writes the runtime env-config there too -- which is why nginx serves it
+    # through a `location = /env-config.js` alias rather than from the html root.
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - ideable_network
+
+  # SYNC-MANAGED-END: frontend-service
+
+  # SYNC-MANAGED-BEGIN: top-level-networks
+# Compose prefixes the PROJECT NAME onto every network it declares, so a network whose own name
+# repeats the slug comes out stuttering: project `ideable` + `ideable_network` produced
+# `ideable_ideable_network`. `name:` sets the object name explicitly and skips the prefix — the same
+# convention the volumes below already use (`name: ${APP_SLUG}_authentik_pgdata`).
+#
+# The KEY stays `ideable_network`, so every `networks: - ideable_network` in the services is
+# unaffected; only the Docker object name changes.
+networks:
+  ideable_network:
+    name: ${APP_SLUG}_network
+    driver: bridge
+
+  # SYNC-MANAGED-END: top-level-networks
+
+  # SYNC-MANAGED-BEGIN: top-level-volumes
+volumes:
+  template_database_data:
+    name: ${APP_SLUG}_${MODULE_SLUG}_database_data
+
+  # SYNC-MANAGED-END: top-level-volumes
