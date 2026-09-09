@@ -1,0 +1,10 @@
+/*
+ * @ideable/ui — shared styles entry. Consumers import this once:
+ *   @import "@ideable/ui/styles";
+ * It provides the `ideable:` Tailwind layer, the `@theme` token mapping, the canonical
+ * raw palette (single source of truth), and the `.ideable-scope` token cascade
+ * (light/dark + host parity + module branding).
+ */
+@import "./theme.css";
+@import "./base-tokens.css";  /* canonical :root/.dark palette — single source of truth */
+@import "./tokens.css";

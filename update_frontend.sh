@@ -1,0 +1,1 @@
+scripts/dev/common/update_frontend.sh
