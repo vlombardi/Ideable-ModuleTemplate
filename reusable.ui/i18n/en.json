@@ -1,0 +1,64 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "discard": "Discard",
+    "keepEditing": "Keep Editing",
+    "close": "Close",
+    "actions": "Actions",
+    "noResults": "No results found",
+    "unsavedChangesTitle": "Unsaved changes",
+    "unsavedChangesMessage": "You have unsaved changes. Save them before leaving, discard them, or cancel and keep editing."
+  },
+  "chart": {
+    "noData": "No data to display"
+  },
+  "table": {
+    "rowsPerPage": "Rows per page:",
+    "viewAuditTrail": "View Audit Trail",
+    "filterPlaceholder": "Filter...",
+    "all": "All",
+    "true": "True",
+    "false": "False",
+    "noResults": "No results.",
+    "showing": "Showing {{from}} to {{to}} of {{total}} results",
+    "page": "Page {{page}} of {{total}}",
+    "firstPage": "First page",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "lastPage": "Last page",
+    "filterColumn": "Filter column",
+    "resizeColumn": "Drag to resize · double-click to auto-fit",
+    "deleteSelected": "Delete Selected ({{count}})",
+    "updating": "Updating...",
+    "errorLoading": "Error loading data",
+    "columns": {
+      "createdAt": "Created At",
+      "updatedAt": "Updated At",
+      "creator": "Creator",
+      "updater": "Updater"
+    }
+  },
+  "auditTrail": {
+    "title": "{{entity}} — View Audit Trail",
+    "colOp": "Op",
+    "colWhen": "When",
+    "colWho": "Who",
+    "colWhat": "What Changed",
+    "noResults": "No results.",
+    "created": "Created",
+    "deleted": "Deleted",
+    "associated": "Associated",
+    "disassociated": "Disassociated",
+    "noVisibleChanges": "No visible changes",
+    "assocLabel": "Association: {{name}}",
+    "assocType": "Type: {{type}}",
+    "assocEntity": "Entity: {{label}}",
+    "opInsert": "INSERT",
+    "opUpdate": "UPDATE",
+    "opDelete": "DELETE",
+    "opAssociate": "ASSOCIATE",
+    "opDisassociate": "DISASSOCIATE"
+  }
+}

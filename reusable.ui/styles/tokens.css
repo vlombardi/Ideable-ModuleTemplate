@@ -1,0 +1,64 @@
+/*
+ * @ideable/ui — shared design tokens (the single source of truth for the palette).
+ *
+ * BRANDING: change the VALUES below (or provide `--ideable-module-*` overrides via
+ * `[data-lf='module']`); never rename the classes/tokens. Widgets reference the
+ * token names, so a rebrand touches only these values.
+ *
+ * PARITY: inside host_app (`.ideable-scope[data-lf='hostapp']`) the tokens inherit
+ * host_app's runtime `--*` tokens, so shared widgets match host L&F automatically.
+ * Standalone/default values are the fallbacks in each `var(..., <fallback>)`.
+ */
+@layer base {
+  .ideable-scope,
+  .ideable-scope[data-lf='hostapp'] {
+    --ideable-background: var(--background, 0 0% 100%);
+    --ideable-foreground: var(--foreground, 222.2 84% 4.9%);
+    --ideable-card: var(--card, 0 0% 100%);
+    --ideable-card-foreground: var(--card-foreground, 222.2 84% 4.9%);
+    --ideable-popover: var(--popover, 0 0% 100%);
+    --ideable-popover-foreground: var(--popover-foreground, 222.2 84% 4.9%);
+    --ideable-primary: var(--primary, 222.2 47.4% 11.2%);
+    --ideable-primary-foreground: var(--primary-foreground, 210 40% 98%);
+    --ideable-secondary: var(--secondary, 210 40% 96.1%);
+    --ideable-secondary-foreground: var(--secondary-foreground, 222.2 47.4% 11.2%);
+    --ideable-muted: var(--muted, 210 40% 96.1%);
+    --ideable-muted-foreground: var(--muted-foreground, 215.4 16.3% 46.9%);
+    --ideable-accent: var(--accent, 210 40% 96.1%);
+    --ideable-accent-foreground: var(--accent-foreground, 222.2 47.4% 11.2%);
+    --ideable-destructive: var(--destructive, 0 84.2% 60.2%);
+    --ideable-destructive-foreground: var(--destructive-foreground, 210 40% 98%);
+    --ideable-border: var(--border, 214.3 31.8% 91.4%);
+    --ideable-input: var(--input, 214.3 31.8% 91.4%);
+    --ideable-ring: var(--ring, 222.2 84% 4.9%);
+    --ideable-radius: var(--radius, 0.5rem);
+  }
+
+  .ideable-scope[data-lf='module'] {
+    --ideable-background: var(--ideable-module-background, 0 0% 100%);
+    --ideable-foreground: var(--ideable-module-foreground, 222.2 84% 4.9%);
+    --ideable-card: var(--ideable-module-card, 0 0% 100%);
+    --ideable-card-foreground: var(--ideable-module-card-foreground, 222.2 84% 4.9%);
+    --ideable-popover: var(--ideable-module-popover, 0 0% 100%);
+    --ideable-popover-foreground: var(--ideable-module-popover-foreground, 222.2 84% 4.9%);
+    --ideable-primary: var(--ideable-module-primary, 222.2 47.4% 11.2%);
+    --ideable-primary-foreground: var(--ideable-module-primary-foreground, 210 40% 98%);
+    --ideable-secondary: var(--ideable-module-secondary, 210 40% 96.1%);
+    --ideable-secondary-foreground: var(--ideable-module-secondary-foreground, 222.2 47.4% 11.2%);
+    --ideable-muted: var(--ideable-module-muted, 210 40% 96.1%);
+    --ideable-muted-foreground: var(--ideable-module-muted-foreground, 215.4 16.3% 46.9%);
+    --ideable-accent: var(--ideable-module-accent, 210 40% 96.1%);
+    --ideable-accent-foreground: var(--ideable-module-accent-foreground, 222.2 47.4% 11.2%);
+    --ideable-destructive: var(--ideable-module-destructive, 0 84.2% 60.2%);
+    --ideable-destructive-foreground: var(--ideable-module-destructive-foreground, 210 40% 98%);
+    --ideable-border: var(--ideable-module-border, 214.3 31.8% 91.4%);
+    --ideable-input: var(--ideable-module-input, 214.3 31.8% 91.4%);
+    --ideable-ring: var(--ideable-module-ring, 222.2 84% 4.9%);
+    --ideable-radius: var(--ideable-module-radius, 0.5rem);
+  }
+
+  .ideable-scope {
+    background-color: hsl(var(--ideable-background));
+    color: hsl(var(--ideable-foreground));
+  }
+}
