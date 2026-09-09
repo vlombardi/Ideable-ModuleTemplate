@@ -1,0 +1,20 @@
+---
+description: host_app module rules — automatically applied when editing host_app files
+globs: ["modules/host_app/**"]
+alwaysApply: false
+---
+
+You are working inside the host_app module. Before taking any action:
+
+1. Read `modules/host_app/SPECS/base-specs.md` and follow every file it references.
+2. Read the sub-module `SPECS/base_specs.md` for the specific sub-module you are editing.
+3. Read `modules/host_app/<SUB_MODULE>/SPECS/general_bug_avoider.md` before writing or changing code.
+4. Read `modules/module_template/backend/SPECS/ideable-framework-specs/shared-backend-bug-avoider.md` (backend work) or `modules/module_template/frontend/SPECS/ideable-framework-specs/shared-frontend-bug-avoider.md` (frontend work) — these contain framework-level rules that apply to host_app too.
+
+Sub-module quick reference:
+- Backend: `modules/host_app/backend/SPECS/base_specs.md`
+- Frontend: `modules/host_app/frontend/SPECS/base_specs.md`
+- Database: `modules/host_app/database/SPECS/base-specs.md`
+- Auth (Authentik): `modules/host_app/authentik/SPECS/base-specs.md`
+- Edge routing (Traefik): `modules/host_app/traefik/SPECS/base-specs.md`
+- Auth contracts: `modules/host_app/SPECS/auth-specs.md` (load for auth-related tasks)
