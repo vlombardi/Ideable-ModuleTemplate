@@ -1,0 +1,23 @@
+# Nothing here belongs in a build context. No build context in the repo excluded `.env` before
+# this file existed, so a stray `.env`/`.env.secrets` could be COPY'd straight into an image.
+#
+# EVERY pattern is `**/`-prefixed, and that is not decoration. A bare `__pycache__/` or `*.key`
+# matches only at the CONTEXT ROOT — docker does not apply it recursively. Measured: with the
+# unprefixed form, `sub/__pycache__/nested.pyc` and `sub/secrets/leaked.key` were both copied into
+# the image while the root-level equivalents were excluded. So the file read as a secret-leak guard
+# while protecting only the one directory a secret is least likely to be hiding in, and 42 stale
+# `.pyc` from the developer's machine were baked into every backend image.
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.crt
+**/*.sqlite
+**/*.db
+**/.DS_Store

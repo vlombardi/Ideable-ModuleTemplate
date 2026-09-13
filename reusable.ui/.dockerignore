@@ -1,0 +1,5 @@
+# Applied when reusable.ui is used as a named Docker build context (ideable_ui).
+# Never send installed deps (native binaries are platform-specific) or generated files.
+node_modules
+dist
+**/*.d.ts
