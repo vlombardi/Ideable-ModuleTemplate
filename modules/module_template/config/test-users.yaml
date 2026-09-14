@@ -1,0 +1,37 @@
+# E2E test accounts for module_template — NEVER deployed to production.
+# See modules/host_app/config/test-users.yaml for the gates and the reasoning.
+#
+# These two differ by ONE permission (`items:edit`), which is what makes edit-gating testable:
+# the same page must render read-only for one and editable for the other.
+# The tenant is `TEST_TENANT` — the e2e suite's own, created by host_app's provisioner when the
+# installation does not have it and removed again by `--purge`. It is deliberately NOT the tenant a
+# fresh installation is seeded with (`DEFAULT_TENANT`): a suite must not drive the tenant a real
+# deployment uses, and a tenant only the provisioner ever creates is one whose rows can be
+# identified as the suite's own and safely cleaned up.
+#
+# Every module derived from this template inherits this file, so a tenant named here that exists
+# only in the reference installation is a defect in every remote at once. It named `EU` until
+# 2026-09-03, which was the reference install's *seeded default* — so on any real installation the
+# provisioner logged `no such tenant(s) ['EU'] — skipped` and the personas got no host_app row at
+# all. `modules/host_app/backend/TESTS/test_e2e_personas_get_a_tenant.py` now checks every module's
+# copy of this file, not only host_app's.
+users:
+  - username: e2e_module_admin
+    email: e2e_module_admin@test.invalid
+    full_name: E2E Module Admin
+    password_env: E2E_TEST_PASSWORD
+    tenants:
+      - TEST_TENANT
+    profiles:
+      - template_admin
+    superadmin: false
+
+  - username: e2e_module_reader
+    email: e2e_module_reader@test.invalid
+    full_name: E2E Module Reader
+    password_env: E2E_TEST_PASSWORD
+    tenants:
+      - TEST_TENANT
+    profiles:
+      - template_reader
+    superadmin: false

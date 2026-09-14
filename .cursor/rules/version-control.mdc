@@ -1,0 +1,13 @@
+---
+description: Git and version control rules — automatically applied when editing git-related files
+globs: [".github/**", "*.md", "CHANGELOG*"]
+alwaysApply: false
+---
+
+For commit, branch, or pull-request tasks, read `rules/version-control.md` before proceeding.
+
+Key constraint: commit message format is `<type>(<module>): <short description>`.
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
+
+Example: `feat(hostapp-backend): add audit trail endpoint`
