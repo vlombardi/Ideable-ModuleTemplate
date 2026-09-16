@@ -1,0 +1,38 @@
+{
+  "common": {
+    "loading": "Caricamento...",
+    "error": "Errore",
+    "save": "Salva",
+    "cancel": "Annulla",
+    "discard": "Scarta",
+    "keepEditing": "Continua a modificare",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "create": "Crea",
+    "close": "Chiudi",
+    "confirm": "Conferma",
+    "search": "Cerca",
+    "actions": "Azioni",
+    "unsavedChangesTitle": "Modifiche non salvate",
+    "unsavedChangesMessage": "Hai delle modifiche non salvate. Salvale prima di uscire, scartale oppure annulla e continua a modificare.",
+    "notAuthorized": "Non sei autorizzato a visualizzare questa pagina.",
+    "sessionExpired": "La tua sessione è scaduta. Effettua di nuovo l'accesso.",
+    "permissionsUnavailable": "Non è stato possibile verificare i permessi in questo momento. Riprova tra poco."
+  },
+  "table": {
+    "viewAuditTrail": "Visualizza Audit Trail"
+  },
+  "templateItems": {
+    "title": "Elementi Template",
+    "id": "ID",
+    "createItem": "Crea Elemento",
+    "editItem": "Modifica Elemento",
+    "deleteItem": "Elimina Elemento",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo elemento?",
+    "name": "Nome",
+    "description": "Descrizione",
+    "namePlaceholder": "Inserisci il nome dell'elemento",
+    "descriptionPlaceholder": "Inserisci la descrizione dell'elemento",
+    "history": "Storico Elemento"
+  }
+}

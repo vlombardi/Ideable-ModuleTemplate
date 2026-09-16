@@ -1,0 +1,80 @@
+# E2E test accounts — NEVER deployed to production.
+#
+# These exist so the end-to-end suite can authenticate as a real, profile-bearing user without using
+# `sadmin`. Driving the tests as sadmin was wrong twice over: it is a production account, and it holds
+# every permission, so a suite built around it can only ever assert that things are ALLOWED. Half of
+# authorization is denial, and denial needs a persona that legitimately lacks the permission.
+#
+# Two gates, both required, because these accounts have a known password:
+#
+#   E2E_TEST_USERS_ENABLED=true      explicit opt-in, default false
+#   IDEABLE_EXECUTION_MODE != prod   refused outright in production, flag or no flag
+#
+# The password comes from E2E_TEST_PASSWORD. There is no default: no password, no accounts.
+#
+# Every persona is assigned a tenant. Tenant scoping fails CLOSED: a token carrying no
+# `hostapp.tenant_ids` is denied on every tenant-scoped endpoint, which is correct — and it means a
+# persona without one cannot exercise anything, so the suite would be asserting 403s for the wrong
+# reason. `tenants` names them; the provisioner writes the canonical `TenantName(ID)` form.
+#
+# The tenant is `TEST_TENANT`, and it belongs to this suite alone. **The provisioner CREATES it when
+# it is absent** — under the same two gates as the accounts themselves — so these personas work on
+# any installation, and **no seed ever writes it**: `database/SPECS/seed.sql` seeds
+# `DEFAULT_TENANT`, which is a different tenant for a different purpose (a fresh installation needs
+# one tenant to exist before the first user sync).
+#
+# The separation is deliberate and it buys two things. A tenant that a production installation
+# actually uses is never the one a test suite drives. And because nothing but this provisioner ever
+# creates a tenant by this name, a row called `TEST_TENANT` is unambiguously the suite's own — so it
+# can be identified, and removed, without guessing.
+#
+# It was `EU` until it was found not to work anywhere but here. `EU` was host_app's *default*
+# tenant, inserted only `WHERE NOT EXISTS (SELECT 1 FROM tenants)`, so a real installation with the
+# customer's own tenants never had it. The provisioner then logged
+# `WARNING e2e_admin: no such tenant(s) ['EU'] — skipped`, created the persona in Authentik but not
+# in host_app, and the browser suite logged in successfully and drove an identity with no profile
+# and no permissions: twelve entity-page tests failed against a blank shell before the cause was
+# found. Reusing the default tenant for the suite was the first fix and it was the wrong one: it
+# made a production tenant and a test tenant the same row.
+#
+# Naming: every account is prefixed `e2e_` so it is identifiable at a glance in Authentik, in the
+# users page, and in an access review — and so the privileged-access review can exclude this suite's
+# own residue rather than reporting test accounts as privileged holders.
+users:
+  # Full administration, host_app AND every module: this is what the pre-existing specs used to run
+  # as (they ran as `sadmin`). Same capability, but a disposable identity that no production
+  # installation ever gets.
+  - username: e2e_admin
+    email: e2e_admin@test.invalid
+    full_name: E2E Administrator
+    password_env: E2E_TEST_PASSWORD
+    tenants:
+      - TEST_TENANT
+    profiles:
+      - admin
+    superadmin: false
+
+  # Holds a host_app profile and NO module permissions at all. This is the negative persona: it
+  # proves the Items menu is hidden and the page is refused for someone who may not see it. Without
+  # it, "the page loaded for an admin" is the only thing the suite can ever say.
+  - username: e2e_no_module
+    email: e2e_no_module@test.invalid
+    full_name: E2E No Module Access
+    password_env: E2E_TEST_PASSWORD
+    tenants:
+      - TEST_TENANT
+    profiles:
+      - reader
+    superadmin: false
+
+  # The reviewer profile, for segregation-of-duties assertions (ISO 27001 A.5.3): it can read the
+  # privileged-access review, and `admin` deliberately cannot.
+  - username: e2e_officer
+    email: e2e_officer@test.invalid
+    full_name: E2E Security Officer
+    password_env: E2E_TEST_PASSWORD
+    tenants:
+      - TEST_TENANT
+    profiles:
+      - security_officer
+    superadmin: false
