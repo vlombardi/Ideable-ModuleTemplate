@@ -1,0 +1,21 @@
+# Keep the frontend build context lean; deps are installed fresh in the image.
+#
+# EVERY pattern is `**/`-prefixed. A bare `node_modules` or `*.key` matches only at the CONTEXT
+# ROOT — docker does not apply it recursively. Measured with a probe image: `sub/secrets/leaked.key`
+# was copied in while the root-level equivalent was excluded, so the credential lines below read as
+# a guard while protecting only the one directory a credential is least likely to be sitting in.
+**/node_modules
+**/dist
+**/.mf
+# `.ideable-ui` is a TRACKED SYMLINK to the repo-root reusable.ui, so a fresh clone resolves the
+# `file:` dependency with no bootstrap step. It must not enter the build context: a symlink pointing
+# four levels above a SOURCES-rooted context is dangling there, and the Dockerfile creates the real
+# directory itself from the `ideable_ui` named build context.
+**/.ideable-ui
+# Secrets must never enter a build context — no context in the repo excluded them before.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.crt
+**/.DS_Store

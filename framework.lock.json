@@ -1,0 +1,21 @@
+{
+  "version": "1.6.10",
+  "published_at": "2026-09-28T15:54:45Z",
+  "template": {
+    "repo": "https://github.com/vlombardi/Ideable-ModuleTemplate.git"
+  },
+  "devtools": {
+    "image": "ghcr.io/vlombardi/ideable-devtools",
+    "digest": "sha256:c2797f1511294a0bfe9598c4d455443d5c5da1649fb3518897f9d30250e87369"
+  },
+  "host_app": {
+    "registry": "ghcr.io/vlombardi",
+    "images": {
+      "hostapp.authentik-bootstrap": "sha256:a8b81e360ef6815393c8ef4f60716460c1d75dc0719171e50789a123dff47eaa",
+      "hostapp.backend": "sha256:b00cc56e81ecc86883bdbbbccf0611dc42a81722883d2fbc0e34ecc7fa6c1fb8",
+      "hostapp.database": "sha256:8f482b27b3a832230103359fdf1969e70e481096ae134ef540fcab0dc79a6c15",
+      "hostapp.frontend": "sha256:31a84774650bfbfec72aca74f64ed6d8fdbf6cd0ff8a2a256d7f8c206ef8a179",
+      "hostapp.traefik": "sha256:4c1d196e5fdcbbe40ad486f1193204ab5d93606cb8b56bb0e5ecb161330c871b"
+    }
+  }
+}

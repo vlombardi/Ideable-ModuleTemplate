@@ -1,0 +1,62 @@
+{
+  "menu_mapping": [
+    {
+      "menu_item_code": "TEMPLATE",
+      "menu_item_name": "Template",
+      "icon": "Package",
+      "authorization_claim": "template:menu_access",
+      "module": "template",
+      "module_menu_item_code_path": "TEMPLATE",
+      "sub_items": [
+        {
+          "menu_item_code": "ITEMS",
+          "menu_item_name": "Items",
+          "icon": "List",
+          "routing": "/items",
+          "authorization_claim": "items:menu_access",
+          "module": "template",
+          "module_menu_item_code_path": "TEMPLATE.ITEMS",
+          "sub_items": []
+        },
+        {
+          "menu_item_code": "SUB_ITEMS",
+          "menu_item_name": "Sub-Items",
+          "icon": "List",
+          "routing": "/sub_items",
+          "authorization_claim": "sub_items:menu_access",
+          "module": "template",
+          "module_menu_item_code_path": "TEMPLATE.SUB_ITEMS",
+          "sub_items": []
+        },
+        {
+          "menu_item_code": "SUB_ITEM_NOTES",
+          "menu_item_name": "Sub-Item Notes",
+          "icon": "List",
+          "routing": "/sub_item_notes",
+          "authorization_claim": "sub_item_notes:menu_access",
+          "module": "template",
+          "module_menu_item_code_path": "TEMPLATE.SUB_ITEM_NOTES",
+          "sub_items": []
+        }
+      ]
+    },
+    {
+      "menu_item_code": "FAKE_ADMIN_MENU",
+      "menu_item_name": "Fake Admin Example",
+      "icon": "Shield",
+      "module": "template",
+      "module_menu_item_code_path": "ADMIN.FAKE_ADMIN_MENU",
+      "sub_items": []
+    },
+    {
+      "menu_item_code": "UI_EXAMPLES",
+      "menu_item_name": "UI Examples",
+      "icon": "LayoutGrid",
+      "routing": "/gallery",
+      "authorization_claim": "template:menu_access",
+      "module": "template",
+      "module_menu_item_code_path": "UI_EXAMPLES",
+      "sub_items": []
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+/*
+ * @ideable/ui — shared Tailwind theme layer (neutral `ideable:` prefix).
+ *
+ * Shared widgets author classes like `ideable:bg-card`, `ideable:text-muted-foreground`.
+ * Consumers import `@ideable/ui/styles` (which pulls this file + tokens.css). Each
+ * consumer keeps its OWN module prefix (`hostapp:`, `template:`, `${APP_SLUG}:`) for
+ * module-owned components; only shared widgets use `ideable:`.
+ */
+@import "tailwindcss/theme" prefix(ideable);
+@import "tailwindcss/utilities" prefix(ideable);
+
+/* Scan the shared widget + primitive sources (relative to THIS file) so the
+   `ideable:` classes they use are generated, regardless of which consumer imports
+   these styles or from what depth (local or staged into a Docker context). */
+@source "../widgets";
+@source "../primitives";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-border: hsl(var(--ideable-border));
+  --color-input: hsl(var(--ideable-input));
+  --color-ring: hsl(var(--ideable-ring));
+  --color-background: hsl(var(--ideable-background));
+  --color-foreground: hsl(var(--ideable-foreground));
+  --color-primary: hsl(var(--ideable-primary));
+  --color-primary-foreground: hsl(var(--ideable-primary-foreground));
+  --color-secondary: hsl(var(--ideable-secondary));
+  --color-secondary-foreground: hsl(var(--ideable-secondary-foreground));
+  --color-destructive: hsl(var(--ideable-destructive));
+  --color-destructive-foreground: hsl(var(--ideable-destructive-foreground));
+  --color-muted: hsl(var(--ideable-muted));
+  --color-muted-foreground: hsl(var(--ideable-muted-foreground));
+  --color-accent: hsl(var(--ideable-accent));
+  --color-accent-foreground: hsl(var(--ideable-accent-foreground));
+  --color-popover: hsl(var(--ideable-popover));
+  --color-popover-foreground: hsl(var(--ideable-popover-foreground));
+  --color-card: hsl(var(--ideable-card));
+  --color-card-foreground: hsl(var(--ideable-card-foreground));
+  --radius-lg: var(--ideable-radius);
+  --radius-md: calc(var(--ideable-radius) - 2px);
+  --radius-sm: calc(var(--ideable-radius) - 4px);
+}

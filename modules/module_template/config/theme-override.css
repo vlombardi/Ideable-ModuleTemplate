@@ -1,0 +1,43 @@
+/* ============================================================================
+ * Runtime Look & Feel override — edit this file in the DEPLOYED folder to
+ * rebrand THIS module WITHOUT rebuilding any image.
+ *
+ * Deployed location:  deployment_root/modules/<your-module>/config/theme-override.css
+ * Served at:          /config/theme-override.css   (nginx, Cache-Control: no-store)
+ * Loaded by:          index.html, appended after the compiled bundle — an unlayered
+ *                     stylesheet, so anything here WINS the cascade.
+ *
+ * Recoloring one design token here changes this module's own chrome AND every
+ * @ideable/ui widget it renders, because all resolve `hsl(var(--<token>))` at runtime.
+ *
+ * Token values are space-separated HSL triples (NO `hsl(...)` wrapper, NO commas) —
+ * the same format as the canonical palette in @ideable/ui (reusable.ui/styles/base-tokens.css).
+ * Uncomment and edit. An empty file (all comments) is a valid no-op.
+ *
+ * NOTE: this changes the look when the module is viewed standalone / directly. When the
+ * module runs embedded inside host_app (Module Federation), the page is owned by host_app,
+ * so the host's own config/theme-override.css drives the shared palette. For a distinct
+ * per-module look inside the host, use the BUILD-TIME override path instead: set
+ * `--template-module-*` (your slug's `--<slug>-module-*`) tokens and render under
+ * `data-lf="module"` (see reusable.ui/styles/tokens.css and the frontend base_specs).
+ *
+ * Icon glyphs (lucide, bundled into JS) are NOT runtime-overridable — they need a rebuild.
+ * ============================================================================ */
+
+/* --- Light theme -------------------------------------------------------------
+:root {
+  --primary: 24 95% 53%;
+  --primary-foreground: 0 0% 100%;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --radius: 0.5rem;
+}
+------------------------------------------------------------------------------ */
+
+/* --- Dark theme (applied when <html class="dark">) ---------------------------
+.dark {
+  --primary: 24 95% 53%;
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+}
+------------------------------------------------------------------------------ */
