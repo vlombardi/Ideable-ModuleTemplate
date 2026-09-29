@@ -1,0 +1,94 @@
+{
+  "common": {
+    "error": "Error",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "confirm": "Confirm",
+    "search": "Search",
+    "notAuthorized": "You are not authorized to view this page.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "permissionsUnavailable": "Permissions could not be verified right now. Please try again shortly.",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "save": "Save",
+    "select": "Select"
+  },
+  "templateItems": {
+    "title": "Template Items",
+    "id": "ID",
+    "columns": {
+      "id": "ID",
+      "name": "Name",
+      "description": "Description"
+    },
+    "createItem": "Create Item",
+    "editItem": "Edit Item",
+    "deleteItem": "Delete Item",
+    "deleteConfirm": "Are you sure you want to delete this item?",
+    "name": "Name",
+    "description": "Description",
+    "namePlaceholder": "Enter item name",
+    "descriptionPlaceholder": "Enter item description",
+    "history": "Item History",
+    "loadFailed": "Could not load this page. Try again.",
+    "confirmDelete": "Delete this item?",
+    "subItems": {
+      "title": "Sub-items of {{name}}",
+      "create": "Create sub-item",
+      "confirmDelete": "Delete this sub-item?",
+      "loadFailed": "Could not load the sub-items for this item.",
+      "tab": "Item: {{name}} -> Sub-items",
+      "unlink": "Unlink"
+    },
+    "subItemNotes": {
+      "create": "Create note",
+      "tab": "Sub-item: {{name}} -> Notes",
+      "unlink": "Unlink",
+      "columns": {
+        "subItem": "Sub-item"
+      }
+    }
+  },
+  "templateSubItems": {
+    "title": "Sub-Items",
+    "columns": {
+      "id": "ID",
+      "name": "Name",
+      "description": "Description",
+      "itemFk": "Item",
+      "itemName": "Item"
+    },
+    "createItem": "Create Sub-Item",
+    "editItem": "Edit Sub-Item",
+    "deleteItem": "Delete Sub-Item",
+    "deleteConfirm": "Are you sure you want to delete this sub-item?",
+    "history": "Sub-Item History",
+    "loadFailed": "Could not load this page. Try again.",
+    "confirmDelete": "Delete this sub-item?",
+    "selectItem": "Select Item",
+    "subItemNotes": {
+      "create": "Create note",
+      "tab": "Sub-item: {{name}} -> Notes",
+      "unlink": "Unlink"
+    }
+  },
+  "templateSubItemNotes": {
+    "title": "Sub-Item Notes",
+    "columns": {
+      "id": "ID",
+      "name": "Name",
+      "description": "Description",
+      "subItemFk": "Sub-Item",
+      "subItemName": "Sub-Item"
+    },
+    "createItem": "Create Sub-Item Note",
+    "editItem": "Edit Sub-Item Note",
+    "deleteItem": "Delete Sub-Item Note",
+    "deleteConfirm": "Are you sure you want to delete this sub-item note?",
+    "history": "Sub-Item Note History",
+    "loadFailed": "Could not load this page. Try again.",
+    "confirmDelete": "Delete this sub-item note?",
+    "selectSubItem": "Select Sub-Item"
+  }
+}
