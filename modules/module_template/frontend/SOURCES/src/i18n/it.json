@@ -1,0 +1,99 @@
+{
+  "common": {
+    "error": "Errore",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "create": "Crea",
+    "confirm": "Conferma",
+    "search": "Cerca",
+    "notAuthorized": "Non sei autorizzato a visualizzare questa pagina.",
+    "sessionExpired": "La tua sessione è scaduta. Effettua di nuovo l'accesso.",
+    "permissionsUnavailable": "Non è stato possibile verificare i permessi in questo momento. Riprova tra poco.",
+    "cancel": "Annulla",
+    "loading": "Caricamento…",
+    "save": "Salva",
+    "select": "Seleziona"
+  },
+  "templateItems": {
+    "title": "Elementi Template",
+    "id": "ID",
+    "columns": {
+      "id": "ID",
+      "name": "Nome",
+      "description": "Descrizione"
+    },
+    "createItem": "Crea Elemento",
+    "editItem": "Modifica Elemento",
+    "deleteItem": "Elimina Elemento",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo elemento?",
+    "name": "Nome",
+    "description": "Descrizione",
+    "namePlaceholder": "Inserisci il nome dell'elemento",
+    "descriptionPlaceholder": "Inserisci la descrizione dell'elemento",
+    "history": "Storico Elemento",
+    "loadFailed": "Impossibile caricare la pagina. Riprova.",
+    "confirmDelete": "Eliminare questo elemento?",
+    "subItems": {
+      "title": "Sotto-elementi di {{name}}",
+      "create": "Crea sotto-elemento",
+      "confirmDelete": "Eliminare questo sotto-elemento?",
+      "loadFailed": "Impossibile caricare i sotto-elementi di questo elemento.",
+      "tab": "Sotto-elementi",
+      "unlink": "Scollega",
+      "singular": "Sotto-elemento"
+    },
+    "subItemNotes": {
+      "create": "Crea nota",
+      "tab": "Note",
+      "unlink": "Scollega",
+      "columns": {
+        "subItem": "Sotto-elemento"
+      },
+      "singular": "Nota"
+    },
+    "entity": "Elemento"
+  },
+  "templateSubItems": {
+    "title": "Sotto-elementi",
+    "columns": {
+      "id": "ID",
+      "name": "Nome",
+      "description": "Descrizione",
+      "itemFk": "Elemento",
+      "itemName": "Elemento"
+    },
+    "createItem": "Crea Sotto-elemento",
+    "editItem": "Modifica Sotto-elemento",
+    "deleteItem": "Elimina Sotto-elemento",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo sotto-elemento?",
+    "history": "Storico Sotto-elemento",
+    "loadFailed": "Impossibile caricare la pagina. Riprova.",
+    "confirmDelete": "Eliminare questo sotto-elemento?",
+    "selectItem": "Seleziona Elemento",
+    "subItemNotes": {
+      "create": "Crea nota",
+      "tab": "Note",
+      "unlink": "Scollega",
+      "singular": "Nota"
+    },
+    "entity": "Sotto-elemento"
+  },
+  "templateSubItemNotes": {
+    "title": "Note dei sotto-elementi",
+    "columns": {
+      "id": "ID",
+      "name": "Nome",
+      "description": "Descrizione",
+      "subItemFk": "Sotto-elemento",
+      "subItemName": "Sotto-elemento"
+    },
+    "createItem": "Crea Nota",
+    "editItem": "Modifica Nota",
+    "deleteItem": "Elimina Nota",
+    "deleteConfirm": "Sei sicuro di voler eliminare questa nota?",
+    "history": "Storico Nota",
+    "loadFailed": "Impossibile caricare la pagina. Riprova.",
+    "confirmDelete": "Eliminare questa nota?",
+    "selectSubItem": "Seleziona Sotto-elemento"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(scripts/dev/master/publish_framework.sh)"
+    ]
+  }
+}

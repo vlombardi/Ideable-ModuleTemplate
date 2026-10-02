@@ -1,0 +1,1167 @@
+> **NOTE**: This file should not be changed since its content is inherited from the Ideable Framework module_template and is updated via the `sync-template-updates.sh` script. For module-specific frontend specifications, use the `module-ui-specs.md` file.
+
+---
+
+## Main entities definition
+A main entity is an entity that is not a sub-entity of another entity. An association entity is
+one that exists to relate two other entities — an M2M join, or a level reached only through
+another entity's Depth visit / Full perspective chain (e.g. `sub_items` under `items`).
+
+**Every entity a module's datamodel defines gets a standard page by default** — main and
+association entities alike: a menu entry, and the frontend page (`StandardEntityPage`) that lets
+the user view, create, update and delete its records. The default is **opt-out, not opt-in**: a
+module maintainer who wants a specific entity to have no page of its own, or to implement it
+another way, states that explicitly in the module's own `module-specs.md` (its entity table);
+silence means the page is generated. An association entity keeps appearing inside its parent's
+association view (Depth visit / Full perspective) exactly as before — its own page is additional,
+never a replacement for that.
+
+For each entity in scope, the page must allow the user to:
+- view all the records of the entity in a table
+- create a new record of the entity
+- update an existing record of the entity
+- delete an existing record of the entity
+
+If not specified otherwise, every entity in the datamodel — main or association — must have a
+specific entity page defined.
+
+Each such CRUD entity must also ship a **CRUD E2E test suite** authored alongside it and
+executed in the test-and-fix phase: create via the backend API, then verify read /
+update / delete (and filter/sort) through the UI against real data. Copy the reference
+`modules/module_template/frontend/TESTS/playwright/tests/items-crud.spec.ts`; full
+contract in `rules/testing-guidelines.md` § *CRUD E2E tests*.
+
+Rule: it is assumed that the needed backend endpoints are already implemented and available. If, during the implementation of the entity page, some backend endpoint (e.g., entity create, read, update, delete) appears not to be implemented or available, this must be notified to the implementing agent.
+
+## Entity page layout (general rule)
+
+For every entity page, the content must be composed **top-to-bottom** as follows:
+
+1. **Main entity** table, under a header row: the entity name on the left and, on the right of the same row, the
+   **Create** button when the caller may create. The widget prefixes the button's text with `+` (the page passes the plain
+   translated label, `Create Role`, and the button reads `+ Create Role`); while the form is open it reads `Cancel`.
+2. When a row is selected, a **details card** for the selected entity must be rendered below the table, titled in title size
+   `<Entity name>: <selected name>` (e.g. `User: sadmin`).
+3. Below the card, a **related-entities section**: an **accordion** with one item per entity directly associated with the
+   selected one through an association table. Each item's header carries, left-aligned, the title
+   `<direct plural>, <indirect 1st level plural>, <indirect 2nd level plural>, …`
+   (e.g. `Profiles for Tenants, Roles, Permissions`) — the details card above already says whose entities they are — and, on its right, a **Cascade / Overall** toggle
+   (Cascade = Depth visit, Overall = Full perspective).
+4. An expanded item holds a **single tabs strip** (horizontal menu) that drives which association table is rendered.
+5. Exactly **one association table** (FK or M2M) rendered below the tabs strip (based on the active tab), under its own title.
+
+Rule: At any time, the page must show:
+- The main entity table.
+- At most one association table (the one selected by the tabs strip).
+
+### Details card requirements
+
+When an entity is selected in the main table (the one that represents the entity type of the current page), the details card must:
+- Show **all entity attributes**, including those not shown in the main table.
+  - "All" is enforced, not hoped for: every model column is either a field of the card (`detailFields`) or listed with a reason in `detailExcluded`. A foreign key `x_fk` is shown by the entity it points to, under the name `x` (`Name (id)`, § *Human-readable entity references*). A column the card omits without saying why fails `test_every_details_card_shows_every_column.py`.
+- the selected entity name must be highlighted in the details card (e.g. with a border or a different background color).
+- Be future-proof: if new attributes are added later (e.g., image/avatar), the card is the intended place to show them.
+- Use a **dense responsive grid** instead of a single vertical stack.
+- Prefer **multiple fields per row** on medium and large screens.
+- Allocate width **proportionally to the expected content length**:
+  - short identifiers and metadata such as `name`, `code`, `id`, `type`, `status`, `creator`, `updater`, and FK references should stay compact,
+  - long-text fields such as `description`, `notes`, `summary`, `comment`, and similar narrative values should span a wider portion of the card.
+- Preserve vertical breathing room for long text fields so they can wrap naturally without making the whole card feel sparse.
+- If a page needs a non-default width, the field definition may provide an explicit span hint (for example `gridSpan: 8` or `gridSpan: 12`).
+
+Recommended implementation pattern:
+- Render the details card as a **12-column responsive grid**.
+- Default compact fields to about one third of the row width.
+- Render description-like fields wider than short reference fields.
+- Keep the card visually balanced with rounded borders, subtle background contrast, and clear label/value separation.
+
+### Depth visit vs Full perspective
+
+Depending on the visit mode toggle, the association table will show:
+- In **"Depth visit"** mode: each tab in the tab strip, going left to right will visualize the entities related to the entity selected at the previous tab.
+- In **"Full perspective"** mode: each tab in the tab strip will visualize all associated entities that are some way related to the selected main entity.
+
+In "Depth visit" mode:
+- Tabs are **static entity-type tabs** for each depth level (e.g., Profiles, Roles, Permissions).
+- Deeper tabs that depend on an upstream selection must be **disabled** until that upstream selection exists.
+- A tab's label does not change with the selection: it stays the entity's plural name and count. The context a selection adds lives in the accordion item's title and in the table's title.
+
+For instance, let's consider a datamodel where a User can have multiple Profiles and a Profile can have multiple Roles and a role can have multiple Permissions. Let's assume we are in the "Users" page.
+- Cascade (Depth visit):
+  - if the user selects a user (e.g., sadmin) in the Users table, then the accordion item is titled "Profiles for Tenants, Roles, Permissions" and its tabs strip contains:
+    - "Profiles for Tenants (n)", whose table "User sadmin related Profiles for Tenants" shows all the Profiles associated with the user sadmin; the hint reads "Select a Profile for Tenant to see the related Roles". When the user selects a Profile (e.g., admin), the strip moves on to:
+      - "Roles (n)", whose table shows all the Roles associated with the profile admin; the hint reads "Select a Role to see the related Permissions". When the user selects a Role (e.g., users_manager), the strip moves on to:
+        - "Permissions (n)", whose table shows all the Permissions associated with the role users_manager (the last level: no hint).
+- Overall (Full perspective):
+  - if the user selects a user (e.g., sadmin) in the Users table, then the same item has the tabs:
+    - "Profiles for Tenants (n)", containing all the Profiles for the user sadmin.
+    - "Roles (n)", containing all the Roles for all the Profiles associated with the user sadmin. The table will contain the columns "Profile" and "Role" and the Profile column will only show Profiles associated with the user sadmin.
+    - "Permissions (n)", containing all the Permissions for all the Roles for all the Profiles associated with the user sadmin. The table will contain the columns "Profile", "Role" and "Permission" and the Profile column will only show Profiles associated with the user sadmin.
+    - the hint reads "Select another tab above to view the related associated entities", and selecting a row has no effect.
+
+### Tabs strip
+(Association navigation tabs)
+
+The **tabs strip** must always be visible and must act as the user-controlled switch for the association table below.
+
+Rules:
+- A tab's label is the associated entity's plural name followed by its parenthesised count — `Roles (10)`, never a breadcrumb
+  such as `User: sadmin -> Roles (10)`: the item's title already says whose entities they are.
+- Under the strip, the active tab's table has a title `<Entity name> <selected name> related <associated plural>` (e.g.
+  `User sadmin related Profiles`) followed by a normal-size hint: in **Cascade**, `Select a <level n entity> to see the related
+  <level n+1 entity>` (e.g. `Select a Role to see the related Permissions`; the last level has none to name and says nothing
+  more); in **Overall**, `Select another tab above to view the related associated entities`, and selecting a row has no effect.
+- Tabs may represent direct associations (e.g., `Entity A -> Bs`) and deeper reachable associations (e.g., `Entity A -> B:<selected> -> Cs`).
+- Deeper tabs that depend on an upstream selection must be **disabled** until that upstream selection exists.
+- Selecting a row in the currently visible association table may:
+  - Set the upstream selection for the next level.
+  - Automatically switch the active tab to the next-level association tab.
+
+#### Tab mounting vs counters (user-controlled visibility)
+When a main entity row is selected and a tab strip shows multiple association sub-tables:
+- The user must control what is rendered by clicking the tab (tab content must be lazy-mounted; do not force-mount all tabs).
+- Tab counters (e.g. `Permissions (12)`) must update immediately on selection even if the tab has not been opened.
+
+Implementation guideline:
+- Use lightweight "count queries" (e.g. request `limit=1`) to fetch just the `total` for each association and update the tab labels.
+- The full table data query for a tab should be enabled only when that tab is active.
+
+#### Selection validity and pruning
+
+When the upstream selection changes, downstream selections must be preserved **only if still valid**.
+
+Rules:
+- If a selected downstream item is no longer reachable under the new upstream selection, it must be cleared automatically.
+- When pruning clears the selection required for the currently active tab, the UI must automatically switch back to the nearest valid tab.
+
+---
+
+## The standard entity page (`StandardEntityPage`)
+
+`@ideable/ui` ships the entity page itself. `StandardEntityPage` is the catalogue entry that
+implements the layout above, so a module that declares an entity **mounts** its page instead of
+writing one: it supplies the entity key, its `EntityTransport`, and what only the module knows —
+columns and labels, form fields, details-card fields, association tabs, and whether this caller may
+write. `@ideable/ui` never knows a module's datamodel, its API base URL or its authentication.
+
+A page is not a route: the caller decides where it appears — bound to a menu item, or opened from the
+module's own navigation inside a popup, a drawer or a tab.
+
+### What the page renders, top to bottom
+
+1. The toolbar and the create affordance, gated on edit mode **and** the write permission.
+2. The **master table** (`EntityTable`): server-side paging, sorting and filtering, row actions, the
+   audit-trail action.
+3. When a row is selected, the **details card** for that row.
+4. The **related-entities accordion**: one item per association group (a root tab and the tabs chained after it), each item's
+   header holding its title and the **Cascade / Overall** toggle (labels of `Depth visit` / `Full perspective`) as a sibling of
+   the trigger button — never inside it. The first item is open on first render; several may be open at once. Each item **keeps its open or closed
+   state when another row is selected** (an open item stays open, a closed one stays closed): the state starts over only
+   when the page's set of items changes.
+5. In an open item, the **tabs strip**: one tab per level of the group, named `<plural> (<count>)`.
+6. Exactly **one association table** — the active tab's — under its title and hint.
+7. The audit-trail popup, when the entity is versioned and a history fetcher is supplied.
+
+Steps 3–6 are the standard implementation of § *Details card requirements*, § *Depth visit vs Full
+perspective* and § *Tabs strip*: a page that mounts `StandardEntityPage`, declares its details fields
+and declares its association tabs satisfies those sections without writing them.
+
+### A failed create or edit stays open and says why
+
+Every create/edit form the page renders — the main entity's own, and each association level's —
+submits through the caller's `transport`. A rejected submission (a validation error, a conflict, any
+non-2xx response) is caught and shown as an inline message beside the form; the dialog stays open
+with the viewer's input intact, and nothing is cleared or dismissed until the request actually
+succeeds. The message is cleared automatically the next time that create/edit dialog is opened or
+cancelled, so a stale failure never survives into the next attempt.
+
+**Both are declared by the caller, and neither is rendered when it is not declared.** The details card
+appears when `detailFields` is supplied and a row is selected; the toggle and the strip appear when
+`associations` is supplied. **An entity with no association has no visit-mode toggle** — items 3–5 of
+the layout presuppose an entity with associations, and a toggle with nothing to switch between offers
+the user a choice that does nothing.
+
+**The page's own props for the two**, beyond what it already takes (`entityKey`, `transport`, `title`,
+`columns`, `labelFor`, `formFields`, …):
+
+| Prop | What it is |
+|---|---|
+| `detailFields?: DetailField<Row>[]` | the selected row's details card — its fields, one of them the name |
+| `entityLabel?: string` | the entity's singular name, already translated (`User`) — the details card's title reads `<entityLabel>: <selected name>`; omitted, the card has no title |
+| `detailExcluded?: Record<string, string>` | the model columns the details card deliberately leaves out, each with its reason (`authentik_internal_id: 'internal identifier, not for display'`). A page that declares `detailFields` declares this beside them; a contract test fails when a model column is in neither |
+| `canCreate?: boolean`, `canDelete?: boolean` | whether this caller may create / delete a row; each defaults to `canEdit`. A page whose backend separates the powers (a tenant is created and deleted with `administer_all`, edited with `tenants:edit`) passes them apart, so it offers no control the backend refuses |
+| `associations?: AssociationTab<Row>[]` | the entity's association levels, in depth order |
+| `rowLabel?: (row: Row) => string` | how the selected MAIN row is named in the titles and the chain; omit and it is named by its id |
+| `visitMode?: 'depth' \| 'full'` + `onVisitModeChange?` | control the toggle; leave both out and the page owns it |
+
+### Four more things the page carries (all optional, all inert when unset)
+
+A page that sets none of the four behaves exactly as it always has.
+
+**An unsaved-changes guard.** `onFormDirtyChange?: (dirty: boolean) => void` is called with the dirty
+state of whichever create or edit form is open — the main entity's or an association level's — so a
+module can attach its own navigation guard. It reports `true` while a form is open and its values
+differ from where they started, and `false` when there is no dirty open form: closing, cancelling or
+submitting a form reports `false`, it is never left at `true`. The page raises no prompt of its own;
+what to do about unsaved changes is the module's.
+
+**An association tab that depends on a named tab.** `AssociationTab.dependsOn?: string | null` says
+whose selection enables the tab in Depth visit:
+
+| `dependsOn` | The tab is enabled in Depth visit when |
+|---|---|
+| omitted | the tab before it has a selection — **the existing rule, unchanged**; the first tab needs only the main row |
+| `null` | the main row is selected — it depends on nothing else |
+| a tab id | that tab has a selection (and, recursively, what that tab depends on does) |
+
+The id must name an **earlier** tab; anything else is refused when the page renders, naming the tab
+and the id. In Full perspective every tab is enabled, as before. **A tab's `chain` is the path of
+its ancestors**: `chain[0]` is the main row, then one entry per ancestor from the root down to its
+parent, re-indexed from 1. For a tab that omits `dependsOn` that is exactly the chain it always
+received, so an existing page's levels and labels are untouched. Selecting a row in a tab clears the
+selections of every tab that depends on it, directly or not; siblings are untouched. Selecting a row
+moves to the next tab only when the next tab depends on the one just selected.
+
+**A module's own row action.** `rowActions?: (row: Row) => React.ReactNode`, rendered **inside the
+actions cell, after the standard actions**. The standard order — history, edit, delete — is part of
+the contract and does not move; a module that wants an action elsewhere keeps a column of its own.
+Supplying `rowActions` makes the actions cell exist even where no standard action does.
+
+**The forms are a protected region.** The table deselects the row on a `mousedown` outside it unless
+the target is inside a dialog, a tab, a `[data-m2m-section]` or a `[data-detail-region]`. The page
+wraps the create and edit forms it renders — the main entity's and every association level's — in
+`data-detail-region`, so pressing a form's submit button does not deselect the row and collapse the
+association panel before the click completes. A module needs no workaround.
+
+### The details card
+
+```tsx
+export interface DetailField<Row> {
+  /** The row's property this field shows. */
+  name: string
+  /** Already translated — the page resolves its own chrome, not the module's copy. */
+  label: string
+  /** Optional renderer. Default: the value as text, or `-` when it is absent. */
+  render?: (row: Row) => React.ReactNode
+  /** 12-column grid span. Omit to let the page choose by the field's expected content length. */
+  gridSpan?: number
+  /**
+   * This field holds the entity's NAME. Exactly one field of a declared details card sets it: the
+   * page renders that field as the card's header, highlighted, so a reader can see which entity the
+   * card describes. The page cannot know which field it is — a module's datamodel is the module's.
+   */
+  isName?: boolean
+  /**
+   * This field is an IMAGE the entity owns (`logo`). The card draws it in a box of at most 200 x 200 px
+   * with its proportions kept, loaded from `GET /<entityKey>/<id>/<name>` through the transport's
+   * `getBlob`; the row says whether there is one with `has_<name>`.
+   */
+  image?: boolean
+}
+
+#### Image fields (`type: "image"` on a form field)
+
+A form field of `type: "image"` is a file input with a preview and a remove action. Its value is the chosen
+`File`, `false` for "remove", or untouched. Images never travel inside the entity's JSON: after the
+create or update succeeds, the page sends each chosen file to `PUT /<entityKey>/<id>/<name>` as
+`multipart/form-data` (`transport.putFile`) and each removal to `DELETE` on the same path. The server owns
+what is accepted — type, size, and an SVG scanned for scripts — and answers a refusal with a message the
+form shows; nothing is stored when it refuses.
+
+<StandardEntityPage entityKey="items" transport={entityTransport} detailFields={detailFields} … />
+```
+
+Requirements (normative; § *Details card requirements* is the source):
+
+- **Every attribute of the selected entity appears**, including those the master table does not show.
+  A field absent from `detailFields` is not shown, so the caller declares them all — or declares
+  explicitly what it means to leave out.
+- The selected entity's **name is highlighted** in the card (a border or a contrasting background).
+  The page takes it from the field marked `isName` and renders it as the card's **header**, which is
+  what identifies the entity the card describes; the remaining fields fill the grid below it.
+  **Exactly one field of a declared card sets `isName`** — a requirement on the caller, because the
+  page cannot know which field is an entity's name and must not guess one: a card with no field
+  marked has no header, and a card with two is ambiguous about which entity it describes.
+- A **12-column responsive grid**, dense rather than a single vertical stack: several fields per row
+  from the medium breakpoint up.
+- Width is **proportional to the expected content length**: identifiers, codes, statuses, FK
+  references and audit fields stay compact; narrative fields (`description`, `notes`, `summary`) span
+  wider and keep the vertical room to wrap. `gridSpan` overrides the page's default for a field that
+  needs it.
+- Foreign-key fields render as `"<Name> (<ID>)"` per § *Human-readable entity references*.
+
+### The association view
+
+The caller declares the levels; the page owns the mechanics.
+
+```tsx
+/** The selected MAIN row first, then one entry per association level already selected. */
+export type AssociationChain = Array<{ level: number; id: string | number; label: string }>
+
+/** The paging/sorting state a level's table produces, plus the level's own `baseParams`. */
+export interface AssociationQueryParams extends Record<string, unknown> {
+  skip?: number
+  after_id?: number
+  limit?: number
+  sort_by?: string
+  sort_order?: "asc" | "desc"
+}
+
+/** How one level is fetched and shown, in one visit mode. */
+export interface AssociationLevel<Row> {
+  columns: ColumnDef<Row, any>[]
+  /** One page of this level's rows. `chain[0]` is always the selected main row. */
+  query: (params: AssociationQueryParams, chain: AssociationChain) => Promise<PageResult<Row>>
+  /** A lightweight count for the tab label (`Permissions (12)`); omit and the label carries none. */
+  count?: (chain: AssociationChain) => Promise<number>
+  /** Fixed params merged into every request this level makes. */
+  baseParams?: (chain: AssociationChain) => Record<string, unknown>
+  /**
+   * How a row of this level is NAMED in the breadcrumb, e.g. `admin (3)` — a function rather than a
+   * field name because the framework's own reference format carries the id beside the name
+   * (§ *Human-readable entity references*). Omit and a selection is named by its id.
+   */
+  label?: (row: Row) => string
+  /**
+   * The id THIS row contributes to the chain that a DEEPER level's `baseParams` reads —
+   * `chain[index + 1].id`. Omit and the chain carries `row.id`, correct whenever this level's rows
+   * already ARE the referenced entity.
+   *
+   * Required when this level's rows are a join/grant row reached THROUGH the entity rather than
+   * the entity itself — e.g. a Users page's Profiles level reads `as_user_profile`, whose own `id`
+   * is a synthetic composite of every key the grant carries (a framework association's `id` is
+   * always `left_fk__right_fk[__scope_fk]`, never the referenced entity's own id). A deeper level's
+   * `baseParams` scoped by `profile_fk: chain[1]?.id` then received that composite string instead
+   * of the profile's id: the backend matched no row, and the very next tab read "No results" with
+   * nothing wrong in either level's OWN wiring — only in the value written into the shared slot.
+   */
+  chainId?: (row: Row) => string | number
+  /**
+   * The fields a create form collects for this level — § *Associated entities in tables* makes the
+   * Add button normative on an association table, and a level IS one. Omit and no add affordance is
+   * offered at all.
+   */
+  formFields?: EntityFormField[]
+  /** Create one row of this level from the form's values. Required for the add affordance. */
+  create?: (values: Record<string, unknown>, chain: AssociationChain) => Promise<unknown>
+  /** Remove one row's association; omit and no unlink action is offered. */
+  unlink?: (row: Row, chain: AssociationChain) => Promise<unknown>
+  /**
+   * Edit one row of this level — § *Associated entities in tables* requires editable association
+   * attributes. Omit and no edit action is offered. Reuses `formFields` as the edit form.
+   */
+  update?: (row: Row, values: Record<string, unknown>, chain: AssociationChain) => Promise<unknown>
+  /** Whether this caller may write THIS level — resolved by the MODULE, like the page's `canEdit`. */
+  canWrite?: boolean
+  /** Already-translated labels for the affordances: `createLabel` names the ADD button,
+   *  `createSubmitLabel` the create form's submit button, `saveLabel` the edit form's submit. */
+  createLabel?: string
+  createSubmitLabel?: string
+  saveLabel?: string
+  unlinkLabel?: string
+}
+
+/** One association level of the entity, declared for both visit modes. */
+export interface AssociationTab<Row> {
+  id: string
+  /** The tab's name — the associated entity's plural (`Roles`); the count is appended. The function form receives the chain so far. */
+  label: string | ((chain: AssociationChain) => string)
+  /** The associated entity's singular name (`Role`), for the Cascade hint `Select a Role to see …`. Omit and the hint uses the tab's name. */
+  singular?: string
+  /** Depth visit: this level's rows are the ones associated with the previous level's selection. */
+  depth: AssociationLevel<Row>
+  /** Full perspective: every row reachable from the selected main row, with its provenance columns. */
+  full: AssociationLevel<Row>
+}
+```
+
+**The chain's labels are the caller's as well.** `chain[n].label` is what a breadcrumb tab label is
+built from, and the page cannot name a row of a datamodel it does not know: the caller supplies
+`rowLabel(row)` for the selected MAIN row and each level's own `label(row)`, and a row neither of
+them names falls back to its id. A label that reads `3` where `admin (3)` was meant is the visible
+cost of leaving both out.
+
+**The two modes are declared separately because they are different queries, not one query shown two
+ways.** In Depth visit, level *n* is fetched from level *n-1*'s selection (`role_fk = <selected role>`);
+in Full perspective, every level is fetched from the main row (`/users/{id}/permissions`) and the
+table carries the path's columns (`Profile`, `Role`, `Permission`) so each row's provenance is
+visible.
+
+Rules the page owns, in both modes:
+
+- **The write affordances are the level's, and the page renders them.** § *Associated entities in
+  tables* already requires an Add button (normative) and an unlink action on an association table,
+  and an association level is one: a level declaring `formFields` + `create` gets the page's add
+  affordance and its create form (the same `EntityForm` the page uses for its own create), a level
+  declaring `update` gets the edit action and its edit form (the same `formFields`, pre-filled), and
+  a level declaring `unlink` gets the unlink action in its action column. **A level declaring none of
+  them is read-only**, which is the honest state of an association the module does not offer to
+  write — the affordance is not rendered rather than rendered and refused. All render only when the
+  host shell is in edit mode **and** the level's `canWrite` is true, the same two-part gate as the
+  page's own create.
+- **One association table at a time.** Only the active tab's table is mounted; a tab the user has not
+  opened costs its counter and nothing else. Switching tabs mounts the new table and unmounts the
+  previous one.
+- **Counters are eager, tables are lazy.** A tab's counter reflects its `count` query as soon as the
+  selection that determines it exists, even for a tab never opened.
+- **Depth visit: a tab whose upstream selection is missing is disabled**, and its label updates when
+  an upstream selection changes.
+- **Selecting a row in the active table sets the next level's selection** and switches to the next
+  tab, when there is one.
+- **Selection validity and pruning**, per § *Selection validity and pruning* above: a downstream
+  selection that is no longer reachable is cleared, and when the pruning clears what the active tab
+  requires, the page switches back to the nearest valid tab.
+- **The toggle is `Cascade` (Depth visit) by default**, one page-level state that every accordion header shows and sets. A caller may control it (`visitMode` /
+  `onVisitModeChange`) or leave it uncontrolled.
+- **`detail(row)` remains** as the caller's own region under the master table, for content that is
+  neither the details card nor an association level. It keeps its `data-detail-region` wrapper, which
+  `ServerDataTable`'s click-outside-deselects handler exempts.
+
+---
+
+## Shared Components and Table Infrastructure
+
+### Required Shared Components
+
+If not specified otherwise, every module MUST include the following shared components in `src/components/`:
+
+#### ServerDataTable Component
+
+**File:** `src/components/ServerDataTable.tsx`
+
+**Purpose:** Reusable data table with server-side pagination, sorting, and filtering.
+
+**Requirements:**
+- Must use CSS prefix `${prefix}` matching the module slug (e.g., `template`)
+- Must include proper spacing between all elements
+- Must have separate header rows for sorting and filtering
+- Must include an audit trail row action gated by the `audit_trail:view` permission, taken from `/api/me`
+- **Read-only tables** may hide the per-column filter row via `showFilters={false}` (default
+  `true`) — used by data sources without server-side filtering (e.g. the audit trail). They
+  still get column resize, sort and pagination.
+- **User-resizable columns (normative).** Each column boundary shows a **visible vertical
+  divider** the user can **drag** to change that column's width. **Double-clicking** the
+  divider **auto-fits** the column to the full width of its content (Excel-style — the
+  complete content becomes visible, no clipping). Widths are per-column and applied to the
+  header, filter and body cells together; a column that has not been resized keeps the
+  default auto layout. Implemented in the shared `@ideable/ui` `ServerDataTable` (DOM-driven
+  `colWidths` + `data-col` cells); no per-module wiring is required.
+
+**Implementation Pattern:**
+```typescript
+// Key structure:
+<thead className="${prefix}-bg-muted">
+  {/* Row 1: Sort headers */}
+  <tr className="${prefix}-border-b">
+    {columns.map(column => (
+      <th>
+        <button onClick={() => handleSort(column.id)}>
+          <span>{column.header}</span>
+          <span>{getSortIcon(column.id)}</span>
+        </button>
+      </th>
+    ))}
+  </tr>
+  {/* Row 2: Filter inputs */}
+  <tr className="${prefix}-border-b">
+    {columns.map(column => (
+      <th>
+        {getFilterInput(column)}
+      </th>
+    ))}
+  </tr>
+</thead>
+```
+
+**CSS Requirements:**
+- Table wrapper: `${prefix}-border ${prefix}-rounded-md ${prefix}-overflow-hidden`
+- Header row spacing: `${prefix}-px-4 ${prefix}-py-3` for headers, `${prefix}-px-4 ${prefix}-py-2` for filters
+- Pagination: `${prefix}-flex ${prefix}-items-center ${prefix}-justify-between ${prefix}-gap-2`
+- Action buttons in header: `${prefix}-flex ${prefix}-items-center ${prefix}-gap-4`
+
+#### Component Directory Structure
+
+```
+src/components/
+├── ServerDataTable.tsx    # Required - main table component
+├── ui/                    # Optional - UI primitives if not using host_app's
+│   ├── button.tsx
+│   ├── input.tsx
+│   └── checkbox.tsx
+```
+
+#### RowActionButton / RowActions (canonical row-action icons)
+
+**Shared widget:** `@ideable/ui` → `reusable.ui/widgets/RowActionButton.tsx` (exports
+`RowActionButton` and `RowActions`).
+
+**Purpose:** The single source of truth for the look & feel of entity-table **row action
+icons** (view / edit / delete / history / unlink). Every table — host_app, module_template,
+and every remote module — MUST render its `actions` column with these widgets so all tables
+look identical.
+
+**Requirements (normative):**
+- The `actions` column `cell` renders a `<RowActions>` container wrapping one
+  `<RowActionButton>` per action. Do **not** hand-roll `<Button variant="ghost">` or raw
+  `<button>` with per-module classes — that caused the historical divergence (ghost icons
+  vs bordered squares).
+- `RowActionButton` props: `icon` (a component — `React.ElementType`, so any lucide install
+  or inline SVG works with no cast), `variant?: "default" | "danger"` (danger = destructive
+  delete/unlink), plus standard button props. Always pass `title` **and** `aria-label`.
+- Look is fixed by the widget: rounded-square, bordered, `bg-background`, hover-accent fill;
+  `danger` uses the theme's `destructive` colour. Row hover background comes from the shared
+  `ServerDataTable` (`hover:bg-muted/50`) — do not restyle per module.
+- Mutating actions (edit/delete/unlink) are gated on `isEditEnabled` (see
+  `shared-frontend-bug-avoider.md` § *edit/delete action icons must be hidden in view mode*).
+- host_app consumes it via the local shim `src/components/RowActionButton.tsx`
+  (`export * from '@ideable/ui/widgets/RowActionButton'`), matching the other shims.
+
+#### UnsavedChangesDialog Component
+
+**File:** `src/components/UnsavedChangesDialog.tsx`
+
+**Purpose:** Shared confirmation dialog for pages that have unsaved edits.
+
+**Requirements:**
+- Must be used together with `useUnsavedChangesGuard` for any page that supports create/edit flows.
+- Must expose the three standard actions when available:
+  - keep editing
+  - discard changes
+  - save changes
+- Must reuse the common labels defined in the translation files:
+  - `common.unsavedChangesTitle`
+  - `common.unsavedChangesMessage`
+  - `common.keepEditing`
+  - `common.discard`
+  - `common.save`
+- Must remain scoped to the module root and must not alter host_app global selectors.
+
+**Implementation note:**
+- The component is intentionally small and page-agnostic.
+- Page-specific behavior belongs in the `useUnsavedChangesGuard` action callbacks, not inside the dialog.
+
+#### TimeSeriesChart Component
+
+**File:** `src/components/charts/TimeSeriesChart.tsx`
+
+**Purpose:** Reusable time-series chart (line/area) for entities that expose numeric values over time. This is the framework's canonical chart widget.
+
+**When required:** Mandatory for every page rendering a **time-series entity** — an entity with a `timestamp`-typed column and at least one `numeric`-typed value column (per `modules/host_app/frontend/SPECS/ui-specs.md`). Optional (reusable) for any other numeric-over-time visualization. Modules without a time-series entity are not required to ship it.
+
+**Requirements:**
+- Must use CSS prefix `${prefix}` matching the module slug (e.g., `template`).
+- Must be **page-agnostic and data-driven**: it renders whatever `data`/`series` it is given and never fetches data itself.
+- All series/axis/empty labels must be **passed in by the caller** (already translated via `t()`), so the widget stays i18n-agnostic; the only string it may resolve itself is the empty-state fallback (`chart.noData`), for which it uses `useTranslation()`.
+- Colors, gridlines, and axis text must come from **framework design tokens** (`hsl(var(--${prefix}-primary))`, `--${prefix}-border`, `--${prefix}-muted-foreground`, …) so the chart is automatically light/dark-mode correct with no `dark:` variants.
+- Must render inside a `.${prefix}-scope` subtree (like all module UI) so tokens resolve.
+- Must be responsive (fill the width of its container) and accept an explicit `height`.
+
+**Public API (normative):**
+```typescript
+export interface TimeSeriesPoint { x: string | number; [seriesKey: string]: string | number }
+export interface TimeSeriesSeries { key: string; label: string; color?: string }
+interface TimeSeriesChartProps {
+  data: TimeSeriesPoint[]
+  series: TimeSeriesSeries[]
+  xKey?: string            // default 'x'
+  variant?: 'line' | 'area' // default 'line'
+  height?: number          // default 288
+  xTickFormatter?: (value: string | number) => string
+  yTickFormatter?: (value: number) => string
+  emptyLabel?: string      // default t('chart.noData')
+}
+```
+
+**Deployment / bundle rule (normative):** The chart widget and its charting library (Recharts) must be **imported only through code paths that a consuming module actually uses**. When a remote module does not use the chart on any real page (e.g. it is referenced only by the dev-only Widget Examples page, which is excluded from published builds via the `WIDGET_EXAMPLES` build arg), Recharts and its transitive dependencies must be **tree-shaken out of the published image bundle**. Never import `TimeSeriesChart` (or Recharts) from an always-loaded module-entry path.
+
+---
+
+## Tables
+
+Every UI table must:
+- have a **header** in which every column is sortable via an icon on the right of the column name, or equivalently clicking on the column name. The icon must change to represent whether the column is:
+  - the **sorting column**, in which case the icon will be a down or up arrow, coherently with the sorting order
+  - not the sorting column, in which case it will be a up&down arrow
+  - Sort icons: Unsorted `↕`, Ascending `↑`, Descending `↓`
+- for columns containing text, below the column name, the table header presents an input text field whose purpose is **filtering** the contents of the table. The string input by the user must be considered as a sub-string of the searched field. If "thing" is input, then all the records that contain "thing" in the text are shown in the table (so a record whose related column content is "this is a thing to consider" is shown).
+- for columns containing boolean, below the column name, the table header presents a **Select dropdown (All / True / False)** whose purpose is **filtering** the contents of the table.
+- **Boolean filter normalization**: Boolean filters must work regardless of how the boolean is rendered by the UI or client. The backend must accept the following values for boolean filter query params:
+  - True-ish: `true`, `t`, `1`, `yes`, `y`, `on` (case-insensitive)
+  - False-ish: `false`, `f`, `0`, `no`, `n`, `off` (case-insensitive)
+  - Empty / missing: means "no filter"
+- have all the usual elements for **server-side pagination** like:
+  - (above the table, on the left) the number of elements per page (specifying how many records to show inside the table)
+  - (below the table, on the right), from left to right:
+    - **First Button** (to go directly on the first page)
+    - **Previous button** (disabled when in the first page)
+    - the **page number** on the **total** (e.g., "3 of 110" to inform the user that the current page is the third on a total of 110 pages)
+    - **Next button** (disabled when in the last page)
+    - **Last Button** (to go directly on the last page)
+
+- **Column filter rendering**: Filter inputs must only be rendered for data columns. The row-selection checkbox column (id `__select__`) and the actions column (id `actions`) must not render any filter input. Boolean columns must render a Select dropdown (All / True / False); all other data columns render a text input.
+
+- **Empty filter params**: When a filter is cleared (empty value), the corresponding query parameter must be omitted entirely from the API request — never sent as an empty string. Sending an empty string for a boolean or typed parameter will cause a 422 from the backend.
+
+- **Sticky Header & Responsive Layout**: Table headers must remain fixed ("sticky") at the top during vertical scrolling. The table structure should adapt fluidly to different screen sizes. The footer should stick to the bottom of the available viewport, with only the table's body content being scrollable.
+
+- **Row deselection**: When a row in a table is selected and the user clicks on the area containing that table but outside the table itself, the selected row should be deselected — **except** inside a dialog, an M2M section (`[data-m2m-section]`), a tabs region, the page header, the sidebar, or a `detail(row)` region (`[data-detail-region]`, see `StandardEntityPage` in `reusable.ui/widgets/STANDARD-PAGES.md`). A `detail(row)` region is part of the selection's own UI — it exists only because a row is selected — so a click inside it (its own table, its own create button, its own form) must not cancel the selection that produced it.
+
+- **audit trail action**: The action column must include an audit trail icon action (e.g., `History` from lucide-react). This action is only visible when the permission set from `/api/me` contains `<module_slug>.audit_trail:view` — a frontend MUST NOT decode the token for authorization (`auth-specs.md` §3.3). Clicking the icon opens the **Audit Trail Popup** (see below). The old "Show audit data" toggle is removed from all entity pages and association tables; audit column visibility is no longer a page-level flag.
+
+#### Audit Trail Popup
+
+When the audit trail action icon is clicked for a main entity row, a modal popup must be rendered:
+
+**Content structure** (top-to-bottom):
+1. A **tab strip** at the top:
+   - First tab: `<EntityType> History` — shows the main entity's version history.
+   - One additional tab per associated entity that has a history endpoint: `<AssociatedEntityType> History`.
+2. The **active tab's audit table** — a sortable, **filterable**, paginated table rendered
+   with the shared **`ServerDataTable`** (four `ColumnDef`s with custom cell renderers;
+   server-side sort + pagination + filtering wired to `AuditPageParams`; diffs precomputed
+   per row). It therefore inherits column resize, dark-mode surface and consistent chrome.
+   **Column filtering**: text filters on **When / Who / Op** are sent as
+   `timestamp` / `actor` / `operation_type` query params (via `AuditPageParams.filters`) and
+   applied server-side by the history endpoint (case-insensitive substring; `Op` matches the
+   operation label or numeric code). The **Changes** column is not filterable
+   (`meta.filterable: false`). The four columns are:
+   - **When** — the event timestamp.
+   - **Who** — the actor as `username(user_id)` (e.g. `john_doe(42)`).
+   - **Op** — the operation type (`INSERT`, `UPDATE`, `DELETE`, `ASSOCIATE`, `DISASSOCIATE`).
+   - **What** — the detail of the change (field diffs for field-change rows, association
+     metadata for association rows).
+
+**Permission gate**:
+- The audit action icon must be hidden entirely when `audit_trail:view` is absent from the module's JWT claims.
+- The backend history endpoints must return `403` when the claim is absent.
+
+**Popup styling requirements** (same as table-selection dialogs):
+- **Centered in the viewport** on open — the popup must appear at the center of the screen, not offset to any side.
+- **Draggable** — the popup header acts as a drag handle, allowing the user to reposition the popup by clicking and dragging.
+- **Resizable** — a resize handle in the bottom-right corner allows the user to adjust the popup dimensions. Minimum and maximum size constraints apply.
+- **Dismissal (normative)** — a popup window dismisses **only** via its close (X) icon
+  (top-right). A click on the backdrop / outside the popup must **not** dismiss it, so a
+  stray click never loses the window and its view state. `DraggableResizablePopup` defaults
+  to `closeOnBackdrop={false}`; the shared Radix `DialogContent` prevents outside-interaction
+  dismissal (`onPointerDownOutside`/`onInteractOutside` are prevented by default, still
+  overridable per caller). Esc-to-close stays enabled on Radix dialogs for accessibility.
+- Viewport-based maximum height with vertical scrolling.
+- Horizontally resizable surface, capped at 90% viewport width.
+- Use the standard dialog overlay (`bg-black/80`) and content background (`bg-white`).
+- Preserve filtering, sorting, and pagination behavior inside each tab's audit table.
+- The popup must render via a portal (`createPortal` into `document.body`) so it is not clipped by parent overflow or z-index stacking contexts.
+- The canonical implementation is `src/components/DraggableResizablePopup.tsx`, shared between host_app and module_template (with each module's CSS prefix).
+
+- **Column Header Naming**: Column headers should be user-friendly with the following naming conventions:
+  - Audit columns: "Timestamp" → "Created At", "Actor" → "Creator" (audit metadata folds into the When/Who columns; there are no inline `au_*` columns)
+  - Foreign key columns: Remove "_fk" suffix and capitalize (e.g., "Tenant FK" → "Tenant", "Owner FK" → "Owner")
+  - General formatting: Capitalize words and replace underscores with spaces
+
+- **Column sizing (ID/FK)**: To maximize the space for "talking" columns (e.g. name, description), `id` and `*_fk` columns must use the minimum practical horizontal space.
+  - Apply a narrow fixed width to header, filter cell, and body cells for:
+    - `id`
+    - any column whose id/accessor ends with `_fk`
+  - These columns must be `whitespace-nowrap` and should not expand to fill available width.
+  - "Talking" columns should be allowed to take the remaining width.
+  - Narrow-column headers must not overlap adjacent headers. Narrow header cells must clip overflow.
+  - Narrow-column header labels must avoid ellipses. Prefer abbreviated labels with a dot suffix (e.g. `Assignment ID` -> `Ass. ID`, `Profile FK` -> `Prof. FK`) and provide a tooltip (e.g. native `title`) that shows the full header label on hover.
+  - Do not reduce font size or sorting icon size for narrow columns; keep consistent sizing across all headers.
+
+- **Coherent width by data type**: Every table must reserve horizontal space in a way that matches the content type.
+  - `id` columns should stay minimal, sized just enough to show the header and a short numeric identifier.
+  - Name-like columns should be wider than `id`, but narrower than descriptive text columns.
+  - Description / notes / long-text columns should receive the widest default space.
+  - Boolean, code, status, and other compact fields should remain relatively narrow.
+  - These are default widths only: users must be able to resize columns when needed.
+
+- **Resizable columns**: All data columns must support user-driven horizontal resizing.
+  - Resizing must be available directly from the table header area.
+  - Resizing should preserve a coherent table layout: compact columns stay compact by default, but users may expand or shrink them.
+  - On first render, columns should auto-fit to the current header and cell content as much as practical, while still respecting the per-column default and minimum width rules.
+  - After the initial auto-fit, the table should continue to follow the data-type-based width policies and preserve any manual user resizing.
+  - The table should also stretch to fill the available horizontal space inside the content panel; content-based sizing should act as the minimum width, not the final maximum width.
+  - The implementation may keep widths local to the table instance; persistence across page reloads is optional unless explicitly requested.
+
+- **Overflow handling**: When a header or cell does not fit in the available width, the rendered content must use ellipsis truncation instead of clipping away the last characters.
+  - Truncated text must expose the full content via a tooltip (for example, the native `title` attribute).
+  - This applies to table headers and body cells, including FK reference displays.
+  - Non-textual cells (for example action buttons or custom controls) may opt out of ellipsis behavior when truncation would break the interaction.
+
+- **Referenced entity IDs as suffix (and suppress referenced id/FK columns)**:
+  - When a table cell represents a reference to another entity (e.g., User/Profile/Role/Permission), the UI must display the referenced entity id as a suffix in parenthesis after the entity "talking" name:
+    - Display format: `<name> (<id>)`
+    - Examples: `admin (1)`, `PowerUsers (3)`, `users.read (10)`
+  - Primary name field used for references:
+    - User: `username`
+    - Profile: `profile`
+    - Role: `role`
+    - Permission: `name`
+  - Missing data:
+    - If the name is missing but `id` exists: display `(<id>)`
+    - If `id` is missing: display `-`
+  - Column suppression rule (references only): in any table where a referenced entity is displayed via a "talking" column (e.g., `Username`, `Profile`, `Role`, `Permission`), the UI must not show separate columns for:
+    - the referenced entity `id` column (if present), and
+    - referenced entity FK columns (e.g., `user_fk`, `profile_fk`, `role_fk`, `permission_fk`).
+    - The "talking" column is the canonical display and must include the `(<id>)` suffix.
+  - Filtering behavior for suffix IDs (substring model):
+    - Filtering on a referenced-entity "talking" column must support substring matching on the name AND filtering by referenced id when the filter contains an id token in parentheses.
+    - Define an ID token as any substring matching the pattern: `\(\d+\)` (example: `(10)`).
+    - Filter evaluation rules:
+      - If the filter contains exactly one ID token, the row must match the referenced id token (i.e., referenced entity `id` equals the token number).
+      - If the filter contains multiple ID tokens, treat the filter as a normal substring filter (no special id parsing).
+      - If the filter contains additional text besides the ID token(s), the referenced entity name must also match that text using the normal substring filter semantics (case-insensitive).
+      - If the filter contains no ID tokens, apply the normal substring filter semantics on the referenced entity name.
+    - Examples:
+      - Filter value `(10)` matches rows where referenced entity id is `10`.
+      - Filter value `admin (10)` matches rows where referenced entity id is `10` and referenced entity name contains `admin`.
+
+### Entity List Page Requirements
+
+> **These are enforced, and until now only enforced.** A second entity was implemented from these
+> specs in a generated project and the gate rejected it for items 4 and 5 below — requirements that
+> `frontend/TESTS/test_entity_table_contract.py` asserts and no spec stated. A contract discoverable
+> only by failing is a contract the specs do not have. They are written down here now.
+
+Every entity list page MUST:
+
+1. **Use ServerDataTable component** - Never use raw `<table>` elements
+2. **Define proper column definitions** with ColumnDef interface. The `header` field accepts either a static string or a `() => string` function; use the function form to return a translated label via `t(...)` so headers stay localized:
+   ```typescript
+   const columns: ColumnDef<EntityType>[] = [
+     { id: 'id', header: () => t('entity.id'), accessorKey: 'id', meta: { sortable: true } },
+     { id: 'name', header: () => t('entity.name'), accessorKey: 'name', meta: { sortable: true } },
+     { id: 'actions', header: () => t('common.actions'), cell: renderActions, meta: { sortable: false } },
+   ]
+   ```
+3. **Include audit columns** with proper formatting:
+   ```typescript
+   {
+     id: 'timestamp',
+     header: () => t('table.columns.createdAt'),
+     accessorKey: 'timestamp',
+     cell: ({ row }) => formatTimestamp(row.getValue('timestamp')),
+     meta: { sortable: true }
+   }
+   ```
+4. **Provide header actions** via the `actions` prop (Create button, etc.)
+5. **Include audit trail action** in the action column, rendered only when the fully-qualified `<module_slug>.audit_trail:view` permission is present in the flattened JWT permission set
+
+#### Layout Requirements
+
+**Header Section:**
+```
+[Title]                           [Create Button]
+```
+- Must use `${prefix}-flex ${prefix}-items-center ${prefix}-justify-between`
+- Must have `${prefix}-gap-4` or `${prefix}-gap-6` between header controls
+- Title must use `${prefix}-text-2xl ${prefix}-font-bold`
+- `ServerDataTable` and `EntityTable` take `headerActions?: ReactNode`, rendered at the right end of this header row — the one place a page's Create button sits (`StandardEntityPage` fills it, prefixing the label with `+`); a page never positions the button itself.
+- Entity pages must render a single visible title only: the page-level `h1` is the canonical title and the `ServerDataTable.title` prop must be omitted when it would duplicate that heading
+
+**Table Section:**
+```
+Rows per page: [10 ▼]
+
+┌─────────────────────────────────────────────────────────────┐
+│ ID ↕    │ Name ↕    │ Description ↕    │ Actions          │  <- Sort row
+│ [____]  │ [______]  │ [____________]   │                  │  <- Filter row
+├─────────┼───────────┼──────────────────┼──────────────────┤
+│ 1       │ Item A    │ Description...   │ [Edit] [Delete]  │
+└─────────────────────────────────────────────────────────────┘
+
+[First] [Previous]  1 of 10  [Next] [Last]          Showing 1 to 10 of 100 results
+```
+
+**Spacing Rules:**
+- Page title margin: `${prefix}-mb-6`
+- Between create form and table: `${prefix}-space-y-4`
+- Between filter inputs and header labels: consistent gap (use flex-col with gap)
+- Pagination button spacing: `${prefix}-gap-2`
+- Action buttons in rows: `${prefix}-gap-2`
+
+
+#### Server-side filter and sort are wired, not optional (mandatory)
+
+4. **Wire `onFilterChange` and `onSortChange` on `ServerDataTable`.** The table paginates on the
+   server, so filtering and sorting must go to the server too — a client-side filter over one page
+   silently searches 50 rows out of 50,000 and looks like it worked. The contract is the **props**,
+   not the handler names: a module may name its handlers whatever it likes.
+
+5. **The entity's service sends `sort_by` / `sort_order`, and omits them when empty.** The guard is
+   literal, because the failure it prevents is silent:
+
+   ```ts
+   if (query.sort_by && query.sort_by.trim() !== '' && query.sort_order) {
+     params.append('sort_by', query.sort_by)
+     params.append('sort_order', query.sort_order)
+   }
+   ```
+
+   An empty `sort_by=` reaches the backend as a real parameter and orders by a column called `''`.
+   The same rule applies to every filter parameter: build with `new URLSearchParams()` and append
+   only non-empty values.
+
+6. **Wire the audit trail** — either the shared `AuditTrailPopup` or the standard
+   `table.viewAuditTrail` action. Audit metadata (when, who) is surfaced through that popup, never as
+   inline `au_*` columns on the entity table (`audit-trail-specs.md` § 3.3).
+   The wiring may sit **in the page or in a component of the module's own that the page imports**:
+   a module sharing one column set across several pages puts the shared widget behind one component
+   of its own, which is what the shared-widget rule asks of it. So
+   `frontend/TESTS/test_entity_table_contract.py` reads the page and then follows the page's own
+   imports — relative, or through the `@/` alias onto `src/` — **one level** before it reports a page
+   as unwired, and its failure message names every file it read. Package imports are not followed:
+   `@ideable/ui` is where the widget legitimately comes from, and searching a dependency tree for the
+   two markers would find them and prove nothing.
+
+### CSS/Tailwind Requirements for Tables
+
+#### Prefix Convention
+- All CSS classes MUST use the module's slug prefix `${prefix}-` (e.g., `template-`)
+- Never mix prefixes between modules
+- Never use unprefixed Tailwind classes
+
+#### Required Classes for Tables
+
+**Table Container:**
+- `${prefix}-border ${prefix}-rounded-md ${prefix}-overflow-hidden`
+
+**Header Row:**
+- Container: `${prefix}-bg-muted`
+- Sort header cells: `${prefix}-px-4 ${prefix}-py-3 ${prefix}-text-left ${prefix}-font-semibold ${prefix}-text-sm`
+- Filter row cells: `${prefix}-px-4 ${prefix}-py-2`
+
+**Body Rows:**
+- Cells: `${prefix}-px-4 ${prefix}-py-2`
+- Hover: `hover:${prefix}-bg-muted/50`
+- Selected: `${prefix}-bg-muted`
+
+**Pagination:**
+- Container: `${prefix}-flex ${prefix}-items-center ${prefix}-justify-between ${prefix}-py-2`
+- Buttons: `${prefix}-px-3 ${prefix}-py-1 ${prefix}-border ${prefix}-rounded-md disabled:${prefix}-opacity-50`
+
+### Edit mode for tables
+
+When in edit mode:
+- **Edit and Delete Buttons**: every table row must include an "Edit" button and a "Delete" button. The "Edit" button should open a modal or a dedicated page to modify the record, while the "Delete" button should trigger a confirmation dialog before removing the record.
+
+- **Modal Field Requirements**: Create and edit modals must include ALL available entity fields (excluding auto-generated audit data):
+  - All foreign key fields must use the **Entity Selector Pattern**: display as `"<Name> (<ID>)"` with a "Select" button opening a modal containing a canonical ServerDataTable (sorting, filtering, server-side pagination). Never use raw integer inputs or simple dropdowns.
+  - Boolean fields should be checkboxes
+  - Text fields should be text inputs
+  - JSON fields should be textarea inputs with JSON validation
+  - Code fields should be textarea inputs with monospace font
+  - Example: Entity modals must include all entity fields such as enabled, status, related_entity_fk, and category_fk in addition to name and description
+
+- **Form layout requirements**: Create and edit forms must use a **dense responsive 12-column grid** instead of a single vertical stack.
+  - Prefer **multiple fields per row** on medium and large screens.
+  - Keep short fields compact: `name`, `code`, `id`, `type`, `status`, `creator`, `updater`, FK references, and simple booleans should usually occupy about one third of the row.
+  - Give narrative fields more room: `description`, `notes`, `summary`, `comment`, `address`, and similar long values should span a wider portion of the grid and use taller textareas when appropriate.
+  - Use explicit span hints when a field needs a non-default width, for example `gridSpan: 6`, `gridSpan: 8`, or `gridSpan: 12`.
+  - Keep controls visually balanced with rounded cards, subtle background contrast, consistent internal padding, and clear label/value separation.
+  - Preserve validation behavior: required fields remain required, and checkbox/entity-selector controls must keep their original semantics.
+
+- **Bulk Delete**: The table should include a bulk delete option that allows users to select multiple records and delete them at once. This should be implemented as a checkbox in the table header that, when checked, enables a "Delete Selected" button.
+
+### Associated entities in tables
+
+#### Foreign Key Columns
+When an entity has a foreign key to another entity, the associated entity should be displayed in the table as a link to the associated entity page. When the user clicks on the link, the user should be redirected to the associated entity page.
+When in edit mode, FK fields must use the **Entity Selector Pattern** (see Edit mode section above) — never dropdown menus.
+
+#### Many-to-Many Relationships
+When an entity of type A has a many-to-many relationship with entities of type B (refer to openapi.yaml for the definition of the relationships), the page that lists the A entities as a table should have a tab section below the table to display the B entities in the related table (the same table view used when entity B is selected from the sidebar).
+
+**M2M relationships are bidirectional**: if the A page shows a tab for B, then the B page must also show a tab for A. Both sides of every M2M association must be represented in the UI — there is no "owning side" from a UI perspective.
+
+If an entity of type A has relations with more than one entity, let's say of types B, C, and D, then the table for entities of type A should have one tab section for each entity type (B, C, and D), and each tab section should contain a table to show the entities of the related entity type.
+
+When the user selects a row in the table for entity type A, and in the tab list below is selected the tab for entity type B, then the table for entity type B should be filtered to show only the entities of type B that are related to the selected entity of type A.
+
+When in edit mode, and a row in the table for entity type A is selected, then if the user:
+- deletes an entity in the table inside the tab for entity type B, then the association between the selected entity of type A and the deleted entity of type B should be removed.
+- adds an entity in the table inside the tab for entity type B, then the association between the selected entity of type A and the added entity of type B should be created.
+
+##### Add button on association tables (normative)
+
+When in **edit mode**, every association table (M2M sub-table under a selected main entity) **must** display an **"Add <EntityType>"** button in the same row as *Rows per page*, aligned to the right of that row (`ServerDataTable`'s `pageSizeActions` slot).
+
+**Requirements:**
+1. **Visibility**: The button only appears when:
+   - The page is in edit mode
+   - A main entity row is selected
+   - The association tab is active
+
+2. **Button behavior**: Clicking the button opens a modal containing:
+   - A canonical ServerDataTable showing all available entities of type B
+   - Entities already associated with the selected entity A must be excluded (or marked as disabled)
+   - User selects an entity to create the association
+
+3. **Button labeling**: Use the pattern `"Add <EntityType>"` (e.g., "Add Risk Aspect Group", "Add Permission")
+
+4. **Layout**: the button shares the page-size row, on its right:
+   ```
+   Rows per page: [10 ▼]                          [Add <EntityType> Button]
+   ```
+   The button is placed by the shared widget, once, for every association level — a page never positions it itself. Its label is the level's `createLabel` (e.g. the Users page's Profiles level reads "Assign Profile for Tenant").
+
+##### Unlink action icon
+The action button to remove an association in a M2M sub-table must use an **unlink icon** (broken chain, e.g. `Unlink` from lucide-react), not a generic delete/close icon (`X` or `Trash2`). This visually distinguishes "remove association" from "delete record".
+
+#### Speaking columns: server-side sorting/filtering via dotted paths
+In association sub-tables, the UI must allow sorting and filtering on "speaking" columns that come from related entities (e.g. Permission Name, Role Name, Username), not just the raw FK fields.
+
+Rules:
+- The column `id` used for server sorting/filtering must be the dotted path (e.g. `permission.name`, `role.role`, `user.username`).
+- The backend must accept:
+  - `sort_by=<dotted>` and `sort_order=asc|desc`
+  - `filters=<json>` where `<json>` is a JSON object string whose keys are dotted paths
+- The frontend must never send dotted filter keys as raw query params. All dotted filters go into the single `filters` JSON string query param.
+- **A level's `baseParams` key-column scope (e.g. `user_fk`, `profile_fk`, `role_fk`) is NOT a filter and must never go into the `filters` JSON either.** `parse_filters_param` (backend) only recognises string-valued filter entries — every declared `baseParams` scope is numeric, so wrapping it in `filters` silently drops it (no error), and the association table then renders every row the caller's scope allows instead of only the chain's own. Whether a param belongs in `filters` is decided by its VALUE's type at the call site, not by "everything that isn't paging": a string is always a typed filter-box needle and goes into `filters`; anything else (always numeric, always a `baseParams` key column) is sent bare, matching the router's own named path/query parameters (`build_association_router`'s `**keys: Any`).
+
+#### Constrained FK columns must be non-sortable/non-filterable
+If a FK column is constrained by the current selection in the parent table (e.g. `role_fk` in the permissions-for-selected-role table), it must be marked `meta.sortable=false` and `meta.filterable=false`.
+
+#### Column header labels in association tables
+Column ids may be technical (including dotted paths). User-facing header text must remain stable and readable.
+
+Rules:
+- If the table column definition provides a string `header` (e.g. `header: "Name"`), that string must be used for the header label.
+- Dotted ids must not leak into the UI as header labels (avoid showing `permission.name` to users).
+
+#### Editable association attributes
+Every attribute that belongs to the association itself (i.e. a column of the join table, not of the associated entity) must be **inline-editable** directly in the sub-table row when in edit mode:
+- `boolean` → render a togglable checkbox or toggle switch; clicking it immediately PATCHes the association.
+- `string` / `text` → render an inline text input that commits on blur or Enter.
+- `integer` / `numeric` → render an inline number input that commits on blur or Enter.
+- `enum` / `select` → render an inline Combobox dropdown that commits on selection.
+
+Attributes of the associated entity (not the join table) remain read-only in the association sub-table.
+
+#### Conditional disabling of association attribute controls
+When a business constraint prevents changing an association attribute for a specific record, the inline control must be **disabled** (`disabled` attribute, `cursor-not-allowed`, reduced opacity) and must show a **tooltip** (`title`) explaining why, including the name of the blocking entity when available.
+
+When the constraint does **not** apply to a record (i.e. the change is allowed), the control must be **fully editable** in edit mode — it must not be disabled or read-only.
+
+**Critical**: the disabling condition must be based on the **presence of a blocking entity**, not on the current value of the attribute alone. For example, a `boolean` attribute with value `false` does not by itself mean the control should be disabled — it should only be disabled if another entity is actively blocking the change. If no blocking entity exists, the control must be enabled regardless of the current attribute value.
+
+Example: a `boolean` attribute that enforces a single-owner constraint (only one A entity can hold the attribute as `true` for a given B entity) must be rendered as a disabled checkbox **only when another A entity already holds `true` for that B** (i.e. a blocking entity name is present in the response). The tooltip must read `<attribute label>: <name of the blocking A entity>`. When no other A entity holds `true` for that B (blocking entity name is absent), the checkbox must be **enabled and togglable**, even if the current value is `false`.
+
+To support this, the backend GET endpoint for the M2M association must return sufficient context alongside each constrained attribute — i.e. the name (or identifier) of the entity that is currently blocking the change, so the frontend can display it in the tooltip without making additional requests.
+
+---
+
+## Human-readable entity references (normative)
+
+For every entity B associated with an entity A (i.e., B's id is linked as a foreign key to A, or A and B ids are inside an association table in the datamodel), the UI must render references as **"<Name> (<ID>)"** — never as raw IDs alone.
+
+### Column headers (translation keys → human-readable labels)
+
+Column headers displayed to users must be **human-readable labels**, not translation key paths:
+
+| Incorrect | Correct |
+|-----------|---------|
+| `entities.columns.entityType` | **Entity Type** |
+| `ENTITY.COLUMN.TYPE` | **Entity Type** |
+| `entity_type_fk` | **Entity Type** |
+| `moduleEntity.columns.relatedGroup` | **Related Group** |
+
+**Rule**: Use `t()` to resolve translation keys to human-readable strings. If the translation value itself looks like a code path, fix the i18n file — don't display the key.
+
+### Table cell rendering for FK columns (talking columns)
+
+When a table column represents a foreign key (e.g., `entity_type_fk`, `parent_fk`, `category_fk`), the cell must render as:
+
+```
+<ReferencedEntityName> (<ID>)
+```
+
+**Examples**:
+- `Main Headquarters (5)` instead of `5`
+- `Acme Corporation (12)` instead of `12`
+- `Security Policy (3)` instead of `3`
+
+**Implementation pattern**:
+```typescript
+// In ColumnDef, use a cell renderer for FK columns:
+{
+  id: 'entity_type_fk',
+  header: t('entities.columns.entityType'), // resolves to "Entity Type"
+  accessorKey: 'entity_type_fk',
+  cell: (info) => {
+    const relatedEntity = info.row.original._related?.entity_type;
+    return relatedEntity ? `${relatedEntity.name} (${relatedEntity.id})` : info.getValue();
+  },
+  meta: { sortable: true, filterable: true }
+}
+```
+
+**Backend requirement**: The API must support embedding related entities (e.g., `?embed=entity_type`) so the frontend can access `relatedEntity.name`.
+
+### Details card rendering
+
+In the **details card** (the panel showing the selected entity's attributes), FK fields must also render as `"<Name> (<ID>)"`:
+
+```typescript
+// Detail field example:
+{
+  id: 'entity_type_fk',
+  label: t('entities.columns.entityType'), // "Entity Type"
+  value: (item) => item._related?.entity_type
+    ? `${item._related.entity_type.name} (${item._related.entity_type.id})`
+    : item.entity_type_fk
+}
+```
+
+### Summary rule
+
+| Context | Raw ID | Human-Readable Reference |
+|---------|--------|--------------------------|
+| Table column header | `entity_type_fk` | **Entity Type** |
+| Table cell value | `5` | **Main Headquarters (5)** |
+| Details card label | `entity_type_fk` | **Entity Type** |
+| Details card value | `5` | **Main Headquarters (5)** |
+| Form field label | `entity_type_fk` | **Entity Type** |
+| Form field value | `5` | **Main Headquarters (5)** |
+
+---
+
+## Form FK association selection (normative)
+
+When a form contains a foreign key field (association to another entity), the UI must **never** display a raw integer input or a simple dropdown. Instead, use the **Entity Selector Pattern**:
+
+### Display format
+The currently selected entity must be shown as:
+```
+<ReferencedEntityName> (<ID>)
+```
+Example: `Security Assessment (3)` instead of just `3`.
+
+### Selection mechanism
+To change the association, provide a **"Select"** button next to the display. Clicking this button opens a **modal popup** containing:
+
+1. **Canonical ServerDataTable** with:
+   - Full column headers with sorting indicators
+   - Per-column filtering inputs
+   - Server-side pagination (not client-side)
+   - All standard Ideable table features
+
+2. **Selection interaction**:
+   - Clicking a row selects that entity and closes the modal
+   - The selected entity's name and ID populate the form field
+   - The form tracks the ID for submission
+
+3. **Cancel/Dismiss**:
+   - Modal can be dismissed without selection (no change to form)
+
+### Implementation pattern
+```typescript
+// Form field definition for FK association
+{
+  id: 'related_entity_fk',
+  label: t('entities.columns.relatedEntity'), // "Related Entity"
+  type: 'entity-select',
+  entityDisplay: (item) => item._related?.related_entity
+    ? `${item._related.related_entity.name} (${item._related.related_entity.id})`
+    : '-',
+  entityService: relatedEntityService, // Service to fetch list for modal
+  entityColumns: relatedEntityColumns, // Columns for the selection table
+  required: true,
+}
+```
+
+### Why not dropdowns?
+| Dropdown | Entity Selector |
+|----------|-----------------|
+| Loads all data client-side | Server-side paging, handles large datasets |
+| No filtering capability | Full column filtering |
+| No sorting | Multi-column sorting |
+| Performance issues with >100 items | Scales to thousands of records |
+| Shows only one field | Shows all relevant entity attributes |
+
+### Backend requirement
+The entity service used for selection must support standard `QueryParams` (pagination, sorting, filtering) and optionally `?embed=` for displaying related data in the selection table.
+
+---
+
+## Dropdowns
+
+- All dropdown components must sort their items alphabetically in ascending order and include a search box to easily filter options.
+- `Select.Item` (Radix UI) components must **never** use an empty string as a `value` prop — this causes a runtime error. Use a sentinel value (e.g., `"all"`, `"none"`) and translate it back to the appropriate internal state in the `onValueChange` handler.
+
+## Charts
+
+Charts visualize numeric data. The framework provides a single canonical chart widget, `TimeSeriesChart` (`src/components/charts/TimeSeriesChart.tsx`), described in *Required Shared Components* above.
+
+Normative rules for any chart in a module frontend:
+
+- **Use the framework widget.** Do not hand-roll ad-hoc chart markup or embed a second charting library. Extend `TimeSeriesChart` (or add a sibling widget under `src/components/charts/` and register it in the framework specs) rather than one-off charts.
+- **Time-series entities must render a chart.** Any page for an entity with a `timestamp` column and ≥1 `numeric` column must include a `TimeSeriesChart` of that value over time, in addition to its table (per `modules/host_app/frontend/SPECS/ui-specs.md`).
+- **Token-driven theming.** Series and axis colors must derive from framework design tokens so light/dark parity is automatic. A default series palette maps series index → `primary`, `accent-foreground`, `destructive`, `secondary-foreground`, then repeats with fixed accessible hues for additional series. Callers may override per series via `series[].color`.
+- **i18n.** Series labels, axis tick labels, and any caption must be provided by the page already translated via `t()`. The widget only resolves its own empty-state string from `chart.noData`.
+- **Empty and loading states.** When `data` is empty the widget shows the `emptyLabel` (default `chart.noData`); the page owns loading state.
+- **Bundle isolation.** Follow the deployment/bundle rule in *Required Shared Components*: the chart and Recharts must be tree-shakeable out of published builds when the module does not use a chart on a real page.
+
+## Dialog and Modal Styling
+
+All dialogs and modals must have:
+  - Overlay background: `bg-black/80` (semi-transparent dark overlay)
+  - Content background: `bg-white` (solid white background for readability)
+  - No transparency or blur effects on the content area
+  - Proper z-index layering to appear above other content
+  - `DialogContent` must stay within the viewport and provide a vertical scroll area whenever the content height may exceed the screen
+
+### DraggableResizablePopup — large data popups
+
+The Audit Trail Popup and any similar large data popup must use the shared `DraggableResizablePopup` component (`src/components/DraggableResizablePopup.tsx`) instead of the Radix `Dialog` component. This ensures:
+  - **Centering**: The popup opens at the center of the viewport, not offset to any side.
+  - **Draggable**: The popup header acts as a drag handle for repositioning.
+  - **Resizable**: A bottom-right resize handle allows size adjustment within min/max constraints.
+  - **Portal rendering**: The popup renders via `createPortal` into `document.body`, avoiding clipping by parent overflow or z-index stacking contexts.
+
+### Table-selection dialogs
+
+Any modal used to choose an entity from a `ServerDataTable` or equivalent selection table must:
+
+- Define a viewport-based maximum height
+- Enable vertical scrolling on the dialog body/content
+- Open with a horizontally resizable dialog surface that aims to fit the table's natural width
+- Cap the dialog width at 90% of the viewport width
+- Use horizontal scrolling inside the table area if the table still cannot fit within that cap
+- Keep the table accessible without expanding the popup off-screen
+- Preserve filtering, sorting, and server-side pagination behavior
+
+---
+
+## Migration Guide for Existing Modules
+
+If a module has raw table implementations:
+
+1. Create `src/components/ServerDataTable.tsx` (copy from module_template)
+2. Update entity pages to use `ServerDataTable` instead of raw `<table>`
+3. Define proper `ColumnDef` arrays for each entity
+4. Remove manual sorting/filtering/pagination logic
+5. Test audit trail action visibility and popup behavior
+6. Verify spacing matches this specification
+
+---
+
+## Verification Checklist
+
+Before considering a module complete:
+
+- [ ] ServerDataTable component exists in src/components/
+- [ ] All entity list pages use ServerDataTable (no raw `<table>` elements)
+- [ ] Table headers have proper two-row structure (sort + filter)
+- [ ] Pagination controls are properly spaced and functional
+- [ ] Audit trail row action appears in the action column only when `audit_trail:view` claim is present
+- [ ] Audit Trail Popup opens with main entity history tab and one tab per associated entity
+- [ ] Create button is in header with proper spacing
+- [ ] No overlapping elements or crammed text
+- [ ] Sort icons display correctly (↕, ↑, ↓)
+- [ ] Filter inputs don't overlap with header text
+- [ ] All spacing matches host_app's visual standards
+- [ ] CSS prefix is consistent throughout (e.g., `${prefix}-`)
+- [ ] Time-series entity pages (timestamp + numeric column) render a `TimeSeriesChart`
+- [ ] `TimeSeriesChart` colors/gridlines/axis text derive from design tokens (light/dark correct, no `dark:` variants)
+- [ ] `TimeSeriesChart` receives all series/axis labels pre-translated from the page; only `chart.noData` is resolved internally
+- [ ] Recharts is tree-shaken out of published builds when no real page uses a chart

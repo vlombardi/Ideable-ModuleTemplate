@@ -1,0 +1,50 @@
+// @ideable/ui widget barrel. Prefer deep imports (`@ideable/ui/widgets/X`) in
+// consumers for the tightest tree-shaking; the barrel is a convenience re-export
+// (package is side-effect-free except CSS, so barrel imports still tree-shake).
+
+// Chart
+export { TimeSeriesChart } from './TimeSeriesChart'
+export type {
+  TimeSeriesChartProps,
+  TimeSeriesPoint,
+  TimeSeriesSeries,
+} from './TimeSeriesChart'
+
+// Data table (react-table based). ColumnDef is re-exported from react-table;
+// its `meta` is augmented in ./react-table-meta (imported by ServerDataTable).
+export { ServerDataTable } from './ServerDataTable'
+export type { ColumnDef } from '@tanstack/react-table'
+export { AssociationServerDataTable } from './AssociationServerDataTable'
+export type { PageResult } from './AssociationServerDataTable'
+export { DataTable } from './DataTable'
+
+// Popups / dialogs
+export { default as DraggableResizablePopup } from './DraggableResizablePopup'
+export { AuditTrailPopup } from './AuditTrailPopup'
+export type { VersionRecord, VersionPage, AuditPageParams } from './AuditTrailPopup'
+export { UnsavedChangesDialog } from './UnsavedChangesDialog'
+
+// Images owned by an entity (a tenant's logo): the form field and the box the card draws
+export { EntityImage, ImageField, IMAGE_BOX_PX } from './ImageField'
+
+// Row actions (canonical entity-table action icons)
+export { RowActionButton, RowActions } from './RowActionButton'
+export type { RowActionButtonProps } from './RowActionButton'
+
+// Icon
+export { DynamicIcon } from './DynamicIcon'
+export { EntityTable } from './EntityTable'
+export type { EntityTableProps } from './EntityTable'
+export { EntityForm } from './EntityForm'
+export type { EntityFormField, EntityFormProps } from './EntityForm'
+export { EntitySelector } from './EntitySelector'
+export type { EntitySelectorProps } from './EntitySelector'
+export { StandardEntityPage } from './StandardEntityPage'
+export type {
+  AssociationChain,
+  AssociationLevel,
+  AssociationQueryParams,
+  AssociationTab,
+  DetailField,
+  StandardEntityPageProps,
+} from './StandardEntityPage'
